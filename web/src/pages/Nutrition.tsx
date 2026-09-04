@@ -155,7 +155,7 @@ function Dishes() {
             empty ? (
               <Button variant="primary" onClick={() => setEditing('new')}>
                 <Plus size={16} />
-                Добавить первое
+                Добавить
               </Button>
             ) : undefined
           }
@@ -432,7 +432,7 @@ function MealSlots() {
           action={
             <Button variant="primary" onClick={() => open('new')}>
               <Plus size={16} />
-              Добавить первый
+              Добавить
             </Button>
           }
         />

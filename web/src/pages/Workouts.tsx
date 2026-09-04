@@ -144,7 +144,7 @@ function Templates() {
             empty ? (
               <Button variant="primary" onClick={() => setEditing('new')}>
                 <Plus size={16} />
-                Добавить первый
+                Добавить
               </Button>
             ) : undefined
           }
@@ -661,7 +661,7 @@ function Exercises() {
             empty ? (
               <Button variant="primary" onClick={() => setEditing('new')}>
                 <Plus size={16} />
-                Добавить первое
+                Добавить
               </Button>
             ) : undefined
           }
