@@ -1,0 +1,148 @@
+@import 'tailwindcss';
+
+/*
+ * Theme tokens. The values live in ordinary CSS variables while @theme inline
+ * only forwards references to them, which is why switching themes works at
+ * runtime without rebuilding the classes.
+ */
+@theme inline {
+  --color-bg: var(--c-bg);
+  --color-surface: var(--c-surface);
+  --color-surface-2: var(--c-surface-2);
+  --color-border: var(--c-border);
+  --color-text: var(--c-text);
+  --color-muted: var(--c-muted);
+  --color-accent: var(--c-accent);
+  --color-accent-hover: var(--c-accent-hover);
+  --color-accent-soft: var(--c-accent-soft);
+  --color-on-accent: var(--c-on-accent);
+  --color-success: var(--c-success);
+  --color-success-soft: var(--c-success-soft);
+  --color-warn: var(--c-warn);
+  --color-warn-soft: var(--c-warn-soft);
+  --color-danger: var(--c-danger);
+  --color-danger-soft: var(--c-danger-soft);
+
+  --radius-card: 1rem;
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+}
+
+/* Dark theme: the app is used in the evening, after training. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+:root {
+  --c-bg: #f6f7f9;
+  --c-surface: #ffffff;
+  --c-surface-2: #f1f3f7;
+  --c-border: #e3e6ec;
+  --c-text: #141822;
+  --c-muted: #6a7280;
+  --c-accent: #5b5bd6;
+  --c-accent-hover: #4a4ac4;
+  --c-accent-soft: #eeeefc;
+  --c-on-accent: #ffffff;
+  --c-success: #0f7a58;
+  --c-success-soft: #e2f5ee;
+  --c-warn: #a35a06;
+  --c-warn-soft: #fdf1e0;
+  --c-danger: #bb3b30;
+  --c-danger-soft: #fceceb;
+
+  color-scheme: light;
+}
+
+[data-theme='dark'] {
+  --c-bg: #0d0f14;
+  --c-surface: #15181f;
+  --c-surface-2: #1d212a;
+  --c-border: #272c37;
+  --c-text: #e6e9f0;
+  --c-muted: #949cab;
+  --c-accent: #8f90f2;
+  --c-accent-hover: #a3a4f6;
+  --c-accent-soft: #1e2135;
+  --c-on-accent: #101223;
+  --c-success: #45c79b;
+  --c-success-soft: #12291f;
+  --c-warn: #e0a34a;
+  --c-warn-soft: #2b2010;
+  --c-danger: #ef7c72;
+  --c-danger-soft: #2c1715;
+
+  color-scheme: dark;
+}
+
+/*
+ * A system font, with no call to Google Fonts: inside a container behind a
+ * firewall, or offline, such a request simply hangs. A custom font is added
+ * with its own @font-face, the file going to web/public/fonts/.
+ */
+
+/*
+ * Base styles must live in @layer base. Unlayered CSS rules beat layered ones
+ * regardless of specificity, so `button { color: inherit }` outside a layer
+ * would override utilities such as text-on-accent.
+ */
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html {
+    background: var(--c-bg);
+  }
+
+  body {
+    margin: 0;
+    min-height: 100dvh;
+    background: var(--c-bg);
+    color: var(--c-text);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+
+  /* Drop the spinners on number fields: a finger cannot hit them anyway. */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--c-border);
+    border-radius: 999px;
+    border: 3px solid var(--c-bg);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@utility focus-ring {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--c-bg), 0 0 0 4px var(--c-accent);
+}

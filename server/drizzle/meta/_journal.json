@@ -1,0 +1,62 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1788256626373,
+      "tag": "0000_low_shinobi_shaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1788307200000,
+      "tag": "0001_dish_categories",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1788359139566,
+      "tag": "0002_drop_emoji",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1788359748220,
+      "tag": "0003_planned_supplements",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788362011027,
+      "tag": "0004_drop_daily_targets",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788377123464,
+      "tag": "0005_exercise_measure",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1788378129577,
+      "tag": "0006_uniform_exercise_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1788421786021,
+      "tag": "0007_set_distance",
+      "breakpoints": true
+    }
+  ]
+}

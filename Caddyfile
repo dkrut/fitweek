@@ -1,0 +1,19 @@
+# SITE_ADDRESS decides everything. Left at the default `:80` it serves plain
+# http, which is what a local network wants. Set to a domain name it obtains a
+# certificate, keeps it renewed and redirects http to https on its own.
+#
+# To receive expiry notices from the issuer, add a global block above this one:
+#     {
+#         email you@example.com
+#     }
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# A restore arrives as one request carrying the whole database. The app
+	# caps at 10 MB; this leaves room for the encoding overhead.
+	request_body {
+		max_size 16MB
+	}
+
+	reverse_proxy app:8080
+}

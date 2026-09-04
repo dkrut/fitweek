@@ -1,0 +1,45 @@
+name: fitweek
+
+services:
+  app:
+    build: .
+    image: fitweek
+    container_name: fitweek
+    restart: unless-stopped
+    # No published port: the app is reachable from outside only through Caddy.
+    expose:
+      - '8080'
+    environment:
+      # Generate: openssl rand -hex 32
+      SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET in .env}
+      INIT_USERNAME: ${INIT_USERNAME:-}
+      INIT_PASSWORD: ${INIT_PASSWORD:-}
+      TZ: ${TZ:-Europe/Moscow}
+    volumes:
+      - data:/data
+
+  caddy:
+    image: caddy:2.11-alpine
+    container_name: fitweek-caddy
+    restart: unless-stopped
+    ports:
+      - '${HTTP_PORT:-80}:80'
+      # Required to obtain and renew the certificate once SITE_ADDRESS names a domain.
+      - '${HTTPS_PORT:-443}:443'
+    environment:
+      # A domain name turns https on; the default serves plain http.
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Certificates live here: without a persistent volume every restart would
+      # request new ones and run into the issuer's rate limit.
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  data:
+  caddy-data:
+  caddy-config:
