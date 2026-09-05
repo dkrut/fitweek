@@ -97,12 +97,17 @@ function Dishes() {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
-        <Button variant="primary" onClick={() => setEditing('new')}>
-          <Plus size={16} />
-          Блюдо
-        </Button>
-      </div>
+      {/* While the catalogue is empty the only way in is the button in the
+          empty state: two identical buttons on one screen is a choice that
+          is not one. */}
+      {empty ? null : (
+        <div className="mb-4 flex justify-end">
+          <Button variant="primary" onClick={() => setEditing('new')}>
+            <Plus size={16} />
+            Блюдо
+          </Button>
+        </div>
+      )}
 
       {incomplete > 0 ? (
         <div className="mb-4 flex items-start gap-2.5 rounded-card bg-warn-soft px-3.5 py-3 text-[13px] text-warn">
@@ -114,7 +119,7 @@ function Dishes() {
         </div>
       ) : null}
 
-      {/* Search over nothing only gets in the way. */}
+      {/* Search over nothing only gets in the way either. */}
       {empty ? null : (
         <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
           <SearchInput
@@ -418,12 +423,14 @@ function MealSlots() {
 
   return (
     <>
-      <div className="mb-4 flex justify-end">
-        <Button variant="primary" onClick={() => open('new')}>
-          <Plus size={16} />
-          Приём пищи
-        </Button>
-      </div>
+      {list.length === 0 ? null : (
+        <div className="mb-4 flex justify-end">
+          <Button variant="primary" onClick={() => open('new')}>
+            <Plus size={16} />
+            Приём пищи
+          </Button>
+        </div>
+      )}
 
       {list.length === 0 ? (
         <EmptyState

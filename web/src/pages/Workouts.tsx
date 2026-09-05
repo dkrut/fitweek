@@ -97,35 +97,35 @@ function Templates() {
 
   return (
     <>
-      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
-        {/* Searching an empty catalogue only takes up the row. */}
-        {empty ? null : (
-          <>
-            <SearchInput
-              value={query}
-              onChange={setQuery}
-              placeholder="Поиск по названию, заметке, упражнению"
-              className="flex-1"
-            />
-            <Select
-              value={kind}
-              onChange={(event) => setKind(event.target.value as typeof kind)}
-              className="sm:w-44"
-            >
-              <option value="all">Все типы</option>
-              {workoutKinds.map((value) => (
-                <option key={value} value={value}>
-                  {workoutKindLabels[value]}
-                </option>
-              ))}
-            </Select>
-          </>
-        )}
-        <Button variant="primary" className="sm:ml-auto" onClick={() => setEditing('new')}>
-          <Plus size={16} />
-          Шаблон
-        </Button>
-      </div>
+      {/* While the catalogue is empty the only way in is the button in the
+          empty state: two identical buttons on one screen is a choice that
+          is not one. */}
+      {empty ? null : (
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <SearchInput
+            value={query}
+            onChange={setQuery}
+            placeholder="Поиск по названию, заметке, упражнению"
+            className="flex-1"
+          />
+          <Select
+            value={kind}
+            onChange={(event) => setKind(event.target.value as typeof kind)}
+            className="sm:w-44"
+          >
+            <option value="all">Все типы</option>
+            {workoutKinds.map((value) => (
+              <option key={value} value={value}>
+                {workoutKindLabels[value]}
+              </option>
+            ))}
+          </Select>
+          <Button variant="primary" onClick={() => setEditing('new')}>
+            <Plus size={16} />
+            Шаблон
+          </Button>
+        </div>
+      )}
 
       {templates.list.isPending ? <Spinner /> : null}
       {templates.list.isError ? (
@@ -599,22 +599,23 @@ function Exercises() {
 
   return (
     <>
-      <div className="mb-4 flex flex-col gap-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          {empty ? null : (
+      {/* While the catalogue is empty the only way in is the button in the
+          empty state: two identical buttons on one screen is a choice that
+          is not one. */}
+      {empty ? null : (
+        <div className="mb-4 flex flex-col gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
             <SearchInput
               value={query}
               onChange={setQuery}
               placeholder="Поиск по названию, инвентарю, заметке"
               className="flex-1"
             />
-          )}
-          <Button variant="primary" className="sm:ml-auto" onClick={() => setEditing('new')}>
-            <Plus size={16} />
-            Упражнение
-          </Button>
-        </div>
-        {empty ? null : (
+            <Button variant="primary" onClick={() => setEditing('new')}>
+              <Plus size={16} />
+              Упражнение
+            </Button>
+          </div>
           <div className="flex flex-col gap-3 sm:flex-row">
             <Select
               value={category}
@@ -641,8 +642,8 @@ function Exercises() {
               ))}
             </Select>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {exercises.list.isPending ? <Spinner /> : null}
       {exercises.list.isError ? (

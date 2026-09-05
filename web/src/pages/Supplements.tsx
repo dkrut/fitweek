@@ -32,17 +32,22 @@ export default function SupplementsPage() {
   const toast = useToast();
 
   const list = supplements.list.data ?? [];
+  const empty = supplements.list.data !== undefined && list.length === 0;
 
   return (
     <>
+      {/* While the catalogue is empty the way in is the button in the empty
+          state, as in the other two catalogues: one screen, one button. */}
       <PageHeader
         title="Добавки"
         subtitle="Что принимать; по каким дням — в плане недели"
         action={
-          <Button variant="primary" onClick={() => setEditing('new')}>
-            <Plus size={16} />
-            Добавка
-          </Button>
+          empty ? undefined : (
+            <Button variant="primary" onClick={() => setEditing('new')}>
+              <Plus size={16} />
+              Добавка
+            </Button>
+          )
         }
       />
 
@@ -54,10 +59,16 @@ export default function SupplementsPage() {
         />
       ) : null}
 
-      {supplements.list.data && list.length === 0 ? (
+      {empty ? (
         <EmptyState
           title="Добавок пока нет"
           description="Добавьте креатин, протеин, витамины — потом разложите их по дням в плане недели."
+          action={
+            <Button variant="primary" onClick={() => setEditing('new')}>
+              <Plus size={16} />
+              Добавить
+            </Button>
+          }
         />
       ) : null}
 
