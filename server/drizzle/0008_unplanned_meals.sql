@@ -1,0 +1,1 @@
+ALTER TABLE `meal_log` ADD `planned` integer DEFAULT true NOT NULL;

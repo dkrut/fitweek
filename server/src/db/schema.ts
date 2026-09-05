@@ -199,6 +199,12 @@ export const mealLog = sqliteTable(
     portion: text('portion').notNull().default(''),
     recipe: text('recipe').notNull().default(''),
     completed: integer('completed', { mode: 'boolean' }).notNull().default(false),
+    /*
+     * Whether the row came from the plan. A meal eaten on top of the plan is
+     * counted as eaten but never raises the target of the day: the norm is
+     * what was planned, and going over it has to stay visible as going over.
+     */
+    planned: integer('planned', { mode: 'boolean' }).notNull().default(true),
     position: integer('position').notNull().default(0),
   },
   (t) => [index('meal_log_date_idx').on(t.date, t.position)],

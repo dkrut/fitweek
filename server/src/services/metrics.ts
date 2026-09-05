@@ -148,15 +148,19 @@ async function aggregateDays(
 
   for (const meal of meals) {
     const entry = ensure(meal.date);
-    entry.itemsTotal += 1;
-    entry.plannedKcal += meal.kcal;
-    entry.plannedProteinG += meal.proteinG;
+    // Eaten on top of the plan: counted as eaten, never as the plan itself —
+    // the same rule the day screen applies, so the two cannot disagree.
+    if (meal.planned) {
+      entry.itemsTotal += 1;
+      entry.plannedKcal += meal.kcal;
+      entry.plannedProteinG += meal.proteinG;
+    }
     if (meal.completed) {
       entry.kcal += meal.kcal;
       entry.proteinG += meal.proteinG;
       entry.fatG += meal.fatG;
       entry.carbsG += meal.carbsG;
-      entry.itemsDone += 1;
+      if (meal.planned) entry.itemsDone += 1;
     }
   }
 

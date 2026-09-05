@@ -169,19 +169,22 @@ function recalcDay(day: DayView): DayView {
   let fatG = 0;
   let carbsG = 0;
   let done = 0;
+  let plannedMeals = 0;
 
   for (const meal of day.meals) {
+    if (meal.planned) plannedMeals += 1;
     if (meal.completed) {
       kcal += meal.kcal;
       proteinG += meal.proteinG;
       fatG += meal.fatG;
       carbsG += meal.carbsG;
-      done += 1;
+      if (meal.planned) done += 1;
     }
   }
 
-  // The count must match the server: supplements are planned items too.
-  const itemsTotal = day.meals.length + (day.workout ? 1 : 0) + day.supplements.length;
+  // The count must match the server: supplements are planned items too, and a
+  // meal eaten on top of the plan is none of them.
+  const itemsTotal = plannedMeals + (day.workout ? 1 : 0) + day.supplements.length;
   if (day.workout?.status === 'done') done += 1;
   done += day.supplements.filter((item) => item.taken).length;
   const round = (n: number) => Math.round(n * 10) / 10;

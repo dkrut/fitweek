@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { today } from '../src/lib/date.js';
 import { createTestContext, type TestContext } from './helpers.js';
 import { COUNTS } from './fixtures.js';
 
@@ -65,6 +66,44 @@ describe('бэкап и восстановление базы', () => {
       .then((r) => r.json());
     expect(again.dish.length).toBe(exported.dish.length);
     expect(again.planEntry.length).toBe(exported.planEntry.length);
+  });
+
+  /*
+   * A backup taken before the journal knew about unplanned meals carries no
+   * such field. Everything in it came from a plan, so the restore has to read
+   * it that way instead of refusing the file or dropping the day's norm.
+   */
+  it('восстанавливает бэкап, снятый до появления «сверх плана»', async () => {
+    // Opening today is what writes the journal rows the backup then carries.
+    await ctx.app.inject({
+      method: 'GET',
+      url: `/api/days/${today()}`,
+      headers: { cookie: ctx.cookie },
+    });
+
+    const exported = await ctx.app
+      .inject({ method: 'GET', url: '/api/export', headers: { cookie: ctx.cookie } })
+      .then((r) => r.json());
+
+    expect(exported.mealLog.length).toBeGreaterThan(0);
+    const old = {
+      ...exported,
+      mealLog: exported.mealLog.map(({ planned: _drop, ...rest }: { planned: boolean }) => rest),
+    };
+
+    const restored = await ctx.app.inject({
+      method: 'POST',
+      url: '/api/import',
+      headers: { cookie: ctx.cookie },
+      payload: { mode: 'replace', data: old },
+    });
+    expect(restored.statusCode).toBe(200);
+
+    const again = await ctx.app
+      .inject({ method: 'GET', url: '/api/export', headers: { cookie: ctx.cookie } })
+      .then((r) => r.json());
+    expect(again.mealLog.length).toBe(exported.mealLog.length);
+    expect(again.mealLog.every((meal: { planned: boolean }) => meal.planned)).toBe(true);
   });
 
   it('требует явного mode=replace: случайный POST не стирает базу', async () => {

@@ -41,23 +41,33 @@ function computeTotals(
   let plannedCarbsG = 0;
   let done = 0;
 
+  /*
+   * A meal eaten on top of the plan counts as eaten but is no part of the
+   * norm: it neither raises the target nor joins the list of things to tick.
+   * Otherwise adding what you ate over the plan would quietly excuse it.
+   */
+  let plannedMeals = 0;
+
   for (const meal of meals) {
-    plannedKcal += meal.kcal;
-    plannedProteinG += meal.proteinG;
-    plannedFatG += meal.fatG;
-    plannedCarbsG += meal.carbsG;
+    if (meal.planned) {
+      plannedMeals += 1;
+      plannedKcal += meal.kcal;
+      plannedProteinG += meal.proteinG;
+      plannedFatG += meal.fatG;
+      plannedCarbsG += meal.carbsG;
+    }
     if (meal.completed) {
       kcal += meal.kcal;
       proteinG += meal.proteinG;
       fatG += meal.fatG;
       carbsG += meal.carbsG;
-      done += 1;
+      if (meal.planned) done += 1;
     }
   }
 
   // A supplement is as much a planned item of the day as a meal or a workout,
   // so it counts towards the same done-today total.
-  const itemsTotal = meals.length + (workout ? 1 : 0) + supplements.length;
+  const itemsTotal = plannedMeals + (workout ? 1 : 0) + supplements.length;
   if (workout && workout.status === 'done') done += 1;
   done += supplements.filter((item) => item.taken).length;
 
@@ -459,6 +469,8 @@ export async function getDayView(db: Database, date: string): Promise<DayView> {
       portion: meal.portion,
       recipe: meal.recipe,
       completed: false,
+      // A projection is the plan itself, so every row of it is planned.
+      planned: true,
       position: index,
     }));
 

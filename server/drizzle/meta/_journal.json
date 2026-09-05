@@ -57,6 +57,13 @@
       "when": 1788421786021,
       "tag": "0007_set_distance",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1788607587765,
+      "tag": "0008_unplanned_meals",
+      "breakpoints": true
     }
   ]
 }

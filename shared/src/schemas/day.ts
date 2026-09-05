@@ -23,6 +23,8 @@ export const mealLog = z.object({
   portion: z.string(),
   recipe: z.string(),
   completed: z.boolean(),
+  /** False for a meal eaten on top of the plan; it never raises the target. */
+  planned: z.boolean(),
   position: z.number().int(),
 });
 export type MealLog = z.infer<typeof mealLog>;
@@ -49,6 +51,7 @@ export const mealLogCreate = z.object({
   proteinG: z.number().min(0).max(500).optional(),
   fatG: z.number().min(0).max(500).optional(),
   carbsG: z.number().min(0).max(1000).optional(),
+  portion: z.string().trim().max(200).optional(),
 });
 export type MealLogCreate = z.infer<typeof mealLogCreate>;
 

@@ -248,6 +248,52 @@ describe('материализация дня', () => {
     expect(after.workout?.planned.every((item) => item.exerciseCategory === 'cardio')).toBe(true);
   });
 
+  /*
+   * The point of the flag: what you ate over the plan is eaten, but the norm
+   * of the day stays where the plan put it. Otherwise every extra snack would
+   * raise the target by its own calories and the day would always look kept.
+   */
+  it('съеденное сверх плана не поднимает норму дня', async () => {
+    const date = today();
+    const before = await getDayView(ctx.db, date);
+
+    const response = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/days/${date}/meals`,
+      headers: { cookie: ctx.cookie },
+      payload: { name: 'Печенье', kcal: 300, proteinG: 3, fatG: 14, carbsG: 40 },
+    });
+    expect(response.statusCode).toBe(201);
+
+    const after = await getDayView(ctx.db, date);
+    const extra = after.meals.find((meal) => meal.name === 'Печенье');
+
+    expect(extra?.planned).toBe(false);
+    expect(after.meals).toHaveLength(before.meals.length + 1);
+
+    // The plan of the day is untouched by it, and so is the tick counter.
+    expect(after.totals.plannedKcal).toBe(before.totals.plannedKcal);
+    expect(after.totals.plannedProteinG).toBe(before.totals.plannedProteinG);
+    expect(after.totals.plannedFatG).toBe(before.totals.plannedFatG);
+    expect(after.totals.plannedCarbsG).toBe(before.totals.plannedCarbsG);
+    expect(after.totals.itemsTotal).toBe(before.totals.itemsTotal);
+
+    // Ticked, it counts as eaten — over the norm, which is the whole idea.
+    await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/meal-logs/${extra!.id}`,
+      headers: { cookie: ctx.cookie },
+      payload: { completed: true },
+    });
+
+    const eaten = await getDayView(ctx.db, date);
+    expect(eaten.totals.kcal).toBe(300);
+    expect(eaten.totals.plannedKcal).toBe(before.totals.plannedKcal);
+    // A meal outside the plan is nothing to tick off the plan.
+    expect(eaten.totals.itemsDone).toBe(0);
+    expect(eaten.totals.completionPct).toBe(0);
+  });
+
   it('отвергает некорректную дату', async () => {
     await expect(getDayView(ctx.db, '2026-02-30')).rejects.toThrow(/Некорректная дата/);
     await expect(getDayView(ctx.db, 'не-дата')).rejects.toThrow(/Некорректная дата/);

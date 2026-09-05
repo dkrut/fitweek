@@ -208,6 +208,9 @@ export default function TodayPage() {
                     <span className="tabular-nums text-success">
                       {num(meal.proteinG, 0)} г белка
                     </span>
+                    {/* Without the mark it is a puzzle why the target did not
+                        move when the meal was added. */}
+                    {meal.planned ? null : <span>· сверх плана</span>}
                     {meal.fatG === 0 && meal.carbsG === 0 ? (
                       <span title="Жиры и углеводы не заполнены">
                         <Info size={12} />

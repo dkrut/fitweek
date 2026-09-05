@@ -80,12 +80,14 @@ export async function registerDayRoutes(app: FastifyInstance): Promise<void> {
     const body = parse(mealLogCreate, request.body);
     await materializeDay(request.db, date);
 
+    // Everything added through this route is eaten on top of the plan: the
+    // planned rows of a day come from materializeDay, not from here.
     let name = body.name ?? '';
     let kcal = body.kcal ?? 0;
     let proteinG = body.proteinG ?? 0;
     let fatG = body.fatG ?? 0;
     let carbsG = body.carbsG ?? 0;
-    let portion = '';
+    let portion = body.portion ?? '';
     let recipe = '';
 
     if (body.dishId !== null) {
@@ -98,7 +100,7 @@ export async function registerDayRoutes(app: FastifyInstance): Promise<void> {
       proteinG = body.proteinG ?? dish.proteinG;
       fatG = body.fatG ?? dish.fatG;
       carbsG = body.carbsG ?? dish.carbsG;
-      portion = dish.portion;
+      portion = body.portion ?? dish.portion;
       recipe = dish.recipe;
     }
 
@@ -139,6 +141,7 @@ export async function registerDayRoutes(app: FastifyInstance): Promise<void> {
         portion,
         recipe,
         completed: false,
+        planned: false,
         position: nextPosition,
       })
       .returning();
