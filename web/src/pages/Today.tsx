@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Info, Pill, Plus } from 'lucide-react';
-import type { MealLog } from '@shared/index';
+import type { MealLog, MealLogCreate } from '@shared/index';
 import {
   Button,
   Card,
@@ -11,6 +11,8 @@ import {
   IconButton,
   ProgressBar,
   Ring,
+  Field,
+  Input,
   Select,
   Sheet,
   Spinner,
@@ -18,13 +20,11 @@ import {
   cx,
   useToast,
 } from '../components/ui';
-import { DishOptions } from '../components/DishOptions';
 import { MealSheet } from '../components/MealSheet';
 import { WorkoutSession } from '../components/WorkoutSession';
 import {
   useAddMeal,
   useDay,
-  useDishes,
   useMaterializeDay,
   useSetDayNotes,
   useStartWorkout,
@@ -413,16 +413,43 @@ function StartWorkout({ date }: { date: string }) {
 
 /* ----------------------------- Unplanned meal ----------------------------- */
 
+/**
+ * A meal eaten outside the plan is described on the spot rather than picked
+ * from the catalogue: what you ate once is usually not a dish you keep.
+ */
+const emptyMeal = {
+  name: '',
+  kcal: 0,
+  proteinG: 0,
+  fatG: 0,
+  carbsG: 0,
+  portion: '',
+};
+
 function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) {
-  const dishes = useDishes();
   const addMeal = useAddMeal(date);
   const toast = useToast();
-  const [dishId, setDishId] = useState('');
+  const [form, setForm] = useState(emptyMeal);
+
+  const set = <K extends keyof typeof emptyMeal>(key: K, value: (typeof emptyMeal)[K]) =>
+    setForm((current) => ({ ...current, [key]: value }));
+
+  // The same check the dish form makes: 4/9/4 should land near the stated
+  // calories, and a wide gap is almost always a typo.
+  const derivedKcal = form.proteinG * 4 + form.fatG * 9 + form.carbsG * 4;
+  const macrosFilled = form.fatG > 0 || form.carbsG > 0;
+  const mismatch =
+    macrosFilled && form.kcal > 0 && Math.abs(derivedKcal - form.kcal) / form.kcal > 0.2;
 
   const submit = async () => {
-    if (dishId === '') return;
+    const name = form.name.trim();
+    if (!name) {
+      toast('Укажите название', 'error');
+      return;
+    }
+    const body: MealLogCreate = { ...form, name, dishId: null, mealSlotId: null };
     try {
-      await addMeal.mutateAsync({ dishId: Number(dishId), mealSlotId: null });
+      await addMeal.mutateAsync(body);
       toast('Добавлено');
       onClose();
     } catch (error) {
@@ -434,13 +461,14 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
     <Sheet
       open
       onClose={onClose}
+      wide
       title="Добавить приём пищи"
       footer={
         <>
           <Button onClick={onClose}>Отмена</Button>
           <Button
             variant="primary"
-            disabled={dishId === ''}
+            disabled={form.name.trim() === ''}
             loading={addMeal.isPending}
             onClick={() => void submit()}
           >
@@ -449,13 +477,75 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
         </>
       }
     >
-      <p className="mb-3 text-[13px] text-muted">
-        Съели что-то вне плана — добавьте, чтобы суммы за день были честными.
-      </p>
-      <Select value={dishId} onChange={(event) => setDishId(event.target.value)}>
-        <option value="">Выберите блюдо</option>
-        <DishOptions dishes={dishes.list.data ?? []} />
-      </Select>
+      <div className="flex flex-col gap-4">
+        <p className="text-[13px] text-muted">
+          Съели что-то вне плана — запишите. В норму дня это не войдёт, а в съеденное за
+          день войдёт.
+        </p>
+
+        <Field label="Название">
+          <Input
+            value={form.name}
+            onChange={(event) => set('name', event.target.value)}
+            placeholder="например, печенье"
+            autoFocus
+          />
+        </Field>
+
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Field label="Ккал">
+            <Input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              placeholder="0"
+              value={form.kcal === 0 ? '' : form.kcal}
+              onChange={(event) => set('kcal', Number(event.target.value) || 0)}
+            />
+          </Field>
+          <Field label="Белок, г">
+            <Input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              placeholder="0"
+              value={form.proteinG === 0 ? '' : form.proteinG}
+              onChange={(event) => set('proteinG', Number(event.target.value) || 0)}
+            />
+          </Field>
+          <Field label="Жиры, г">
+            <Input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              placeholder="0"
+              value={form.fatG === 0 ? '' : form.fatG}
+              onChange={(event) => set('fatG', Number(event.target.value) || 0)}
+            />
+          </Field>
+          <Field label="Углеводы, г">
+            <Input
+              type="number"
+              inputMode="decimal"
+              min={0}
+              placeholder="0"
+              value={form.carbsG === 0 ? '' : form.carbsG}
+              onChange={(event) => set('carbsG', Number(event.target.value) || 0)}
+            />
+          </Field>
+        </div>
+
+        {mismatch ? (
+          <p className="rounded-xl bg-warn-soft px-3.5 py-2.5 text-[12px] text-warn">
+            По БЖУ выходит {Math.round(derivedKcal)} ккал, а указано {Math.round(form.kcal)}.
+            Проверьте цифры — где-то опечатка.
+          </p>
+        ) : null}
+
+        <Field label="Порция" hint="Например: 4 штуки, 150 г">
+          <Input value={form.portion} onChange={(event) => set('portion', event.target.value)} />
+        </Field>
+      </div>
     </Sheet>
   );
 }
