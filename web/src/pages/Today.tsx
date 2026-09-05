@@ -438,6 +438,12 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
   const dishes = useDishes();
   const toast = useToast();
   const [form, setForm] = useState(emptyMeal);
+  /*
+   * Which button is working, not merely that something is. Both write the same
+   * meal, so a shared flag spins both spinners and the screen answers a
+   * question nobody asked.
+   */
+  const [busy, setBusy] = useState<'add' | 'keep' | null>(null);
 
   const set = <K extends keyof typeof emptyMeal>(key: K, value: (typeof emptyMeal)[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -460,6 +466,7 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
       toast('Укажите название', 'error');
       return;
     }
+    setBusy(keep ? 'keep' : 'add');
     try {
       let dishId: number | null = null;
       if (keep) {
@@ -479,11 +486,13 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
       onClose();
     } catch (error) {
       toast(error instanceof Error ? error.message : 'Не удалось добавить', 'error');
+    } finally {
+      setBusy(null);
     }
   };
 
-  const pending = addMeal.isPending || dishes.create.isPending;
-  const incomplete = form.name.trim() === '';
+  // Neither button is available while the other one writes.
+  const disabled = form.name.trim() === '' || busy !== null;
 
   return (
     <Sheet
@@ -495,16 +504,16 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
         <>
           <Button onClick={onClose}>Отмена</Button>
           <Button
-            disabled={incomplete}
-            loading={pending}
+            disabled={disabled}
+            loading={busy === 'keep'}
             onClick={() => void submit(true)}
           >
             Добавить в справочник
           </Button>
           <Button
             variant="primary"
-            disabled={incomplete}
-            loading={pending}
+            disabled={disabled}
+            loading={busy === 'add'}
             onClick={() => void submit()}
           >
             Добавить
