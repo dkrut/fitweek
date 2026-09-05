@@ -355,11 +355,18 @@ export function Ring({
   size?: number;
   tone?: 'accent' | 'success';
 }) {
-  const pct = target > 0 ? Math.min(1.35, value / target) : 0;
+  /*
+   * A day can have no plan at all — nothing was assigned to that weekday, or
+   * everything in it was eaten on top of the plan. Then there is no norm to
+   * stay within, and every calorie is already past it: the ring fills and
+   * turns the warning colour instead of sitting empty as if nothing happened.
+   */
+  const hasTarget = target > 0;
+  const pct = hasTarget ? Math.min(1.35, value / target) : value > 0 ? 1 : 0;
   const stroke = 8;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
-  const over = pct > 1.08;
+  const over = hasTarget ? pct > 1.08 : value > 0;
   const color = over ? 'var(--c-warn)' : tone === 'success' ? 'var(--c-success)' : 'var(--c-accent)';
 
   return (
@@ -391,7 +398,9 @@ export function Ring({
           <span className="text-lg font-semibold tabular-nums leading-none">
             {Math.round(value)}
           </span>
-          <span className="mt-0.5 text-[11px] text-muted tabular-nums">из {target}</span>
+          <span className="mt-0.5 text-[11px] text-muted tabular-nums">
+            {hasTarget ? `из ${target}` : 'без плана'}
+          </span>
         </div>
       </div>
       <span className="text-[12px] font-medium text-muted">

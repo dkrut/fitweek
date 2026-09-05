@@ -146,13 +146,19 @@ export default function TodayPage() {
                 <div key={String(label)} className="rounded-lg bg-surface-2 px-2 py-1.5">
                   <dt className="text-[11px] text-muted">{label}</dt>
                   <dd className="text-[13px] font-semibold tabular-nums">
-                    {/* A planned 0 means the dishes lack the figure, not a target of 0. */}
                     {Number(planned) > 0 ? (
                       <>
                         {num(Number(value), 0)}
                         <span className="font-normal text-muted">/{num(Number(planned), 0)}</span>
                       </>
+                    ) : Number(value) > 0 ? (
+                      /* No plan for the day, but something was eaten: the
+                         figure is known, there is only nothing to compare it
+                         against. */
+                      num(Number(value), 0)
                     ) : (
+                      /* Nothing eaten and nothing planned — or the dishes of
+                         the plan carry no such figure at all. */
                       <span className="font-normal text-muted">не заполнено</span>
                     )}
                   </dd>
