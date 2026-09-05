@@ -20,6 +20,7 @@ import {
   cx,
   useToast,
 } from '../components/ui';
+import { DishOptions } from '../components/DishOptions';
 import { MealSheet } from '../components/MealSheet';
 import { WorkoutSession } from '../components/WorkoutSession';
 import {
@@ -421,8 +422,9 @@ function StartWorkout({ date }: { date: string }) {
 /* ----------------------------- Unplanned meal ----------------------------- */
 
 /**
- * A meal eaten outside the plan is described on the spot rather than picked
- * from the catalogue: what you ate once is usually not a dish you keep.
+ * A meal eaten outside the plan is described on the spot. A dish from the
+ * catalogue fills the same fields rather than skipping them: half a portion,
+ * a second helping — what was eaten rarely matches the card exactly.
  */
 const emptyMeal = {
   name: '',
@@ -444,6 +446,32 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
    * question nobody asked.
    */
   const [busy, setBusy] = useState<'add' | 'keep' | null>(null);
+  /*
+   * Which dish of the catalogue this is, if any. Editing the numbers keeps the
+   * link: half a portion of porridge is still porridge, and the journal row
+   * carries its own copy of the figures anyway.
+   */
+  const [dishId, setDishId] = useState<number | null>(null);
+  const catalogue = dishes.list.data ?? [];
+
+  const pick = (value: string) => {
+    if (value === '') {
+      // Back to a dish of one's own; the numbers stay to be edited from.
+      setDishId(null);
+      return;
+    }
+    const dish = catalogue.find((item) => item.id === Number(value));
+    if (!dish) return;
+    setDishId(dish.id);
+    setForm({
+      name: dish.name,
+      kcal: dish.kcal,
+      proteinG: dish.proteinG,
+      fatG: dish.fatG,
+      carbsG: dish.carbsG,
+      portion: dish.portion,
+    });
+  };
 
   const set = <K extends keyof typeof emptyMeal>(key: K, value: (typeof emptyMeal)[K]) =>
     setForm((current) => ({ ...current, [key]: value }));
@@ -468,7 +496,7 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
     }
     setBusy(keep ? 'keep' : 'add');
     try {
-      let dishId: number | null = null;
+      let linked = dishId;
       if (keep) {
         // The category is left at «Другое»: this form is about what was eaten,
         // and sorting it into the catalogue is a job for the catalogue.
@@ -478,9 +506,9 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
           category: 'other',
           recipe: '',
         });
-        dishId = dish.id;
+        linked = dish.id;
       }
-      const body: MealLogCreate = { ...form, name, dishId, mealSlotId: null };
+      const body: MealLogCreate = { ...form, name, dishId: linked, mealSlotId: null };
       await addMeal.mutateAsync(body);
       toast(keep ? 'Добавлено и сохранено в справочник' : 'Добавлено');
       onClose();
@@ -494,6 +522,24 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
   // Neither button is available while the other one writes.
   const disabled = form.name.trim() === '' || busy !== null;
 
+  /*
+   * The dish this was taken from, and whether anything about it was changed.
+   * Half a portion of porridge is not the porridge card — it is a card of its
+   * own, worth keeping for the next time. An untouched copy is not: it is
+   * already in the catalogue, and saving it again only makes a twin.
+   */
+  const source = dishId === null ? null : catalogue.find((item) => item.id === dishId);
+  const edited =
+    source !== undefined &&
+    source !== null &&
+    (form.name.trim() !== source.name ||
+      form.kcal !== source.kcal ||
+      form.proteinG !== source.proteinG ||
+      form.fatG !== source.fatG ||
+      form.carbsG !== source.carbsG ||
+      form.portion.trim() !== source.portion);
+  const canKeep = dishId === null || edited;
+
   return (
     <Sheet
       open
@@ -503,13 +549,15 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
       footer={
         <>
           <Button onClick={onClose}>Отмена</Button>
-          <Button
-            disabled={disabled}
-            loading={busy === 'keep'}
-            onClick={() => void submit(true)}
-          >
-            Добавить в справочник
-          </Button>
+          {canKeep ? (
+            <Button
+              disabled={disabled}
+              loading={busy === 'keep'}
+              onClick={() => void submit(true)}
+            >
+              Добавить в справочник
+            </Button>
+          ) : null}
           <Button
             variant="primary"
             disabled={disabled}
@@ -526,6 +574,16 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
           Съели что-то вне плана — запишите. В норму дня это не войдёт, а в съеденное за
           день войдёт.
         </p>
+
+        {/* With an empty catalogue there is nothing to take from it. */}
+        {catalogue.length > 0 ? (
+          <Field label="Взять из справочника" hint="Цифры подставятся — поправьте под съеденное">
+            <Select value={dishId ?? ''} onChange={(event) => pick(event.target.value)}>
+              <option value="">— своё блюдо —</option>
+              <DishOptions dishes={catalogue} />
+            </Select>
+          </Field>
+        ) : null}
 
         <Field label="Название">
           <Input
