@@ -548,7 +548,7 @@ export function Sheet({
         </header>
         <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4">{children}</div>
         {footer ? (
-          <footer className="flex justify-end gap-2 border-t border-border px-5 py-3.5">
+          <footer className="flex flex-wrap justify-end gap-2 border-t border-border px-5 py-3.5">
             {footer}
           </footer>
         ) : null}

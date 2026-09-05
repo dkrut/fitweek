@@ -25,6 +25,7 @@ import { WorkoutSession } from '../components/WorkoutSession';
 import {
   useAddMeal,
   useDay,
+  useDishes,
   useMaterializeDay,
   useSetDayNotes,
   useStartWorkout,
@@ -428,6 +429,7 @@ const emptyMeal = {
 
 function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) {
   const addMeal = useAddMeal(date);
+  const dishes = useDishes();
   const toast = useToast();
   const [form, setForm] = useState(emptyMeal);
 
@@ -441,21 +443,41 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
   const mismatch =
     macrosFilled && form.kcal > 0 && Math.abs(derivedKcal - form.kcal) / form.kcal > 0.2;
 
-  const submit = async () => {
+  /**
+   * Adds the meal to the day. With `keep` the dish is written to the catalogue
+   * first and the journal row points at it — what you ate twice is worth
+   * keeping, and retyping it every time is not.
+   */
+  const submit = async (keep = false) => {
     const name = form.name.trim();
     if (!name) {
       toast('Укажите название', 'error');
       return;
     }
-    const body: MealLogCreate = { ...form, name, dishId: null, mealSlotId: null };
     try {
+      let dishId: number | null = null;
+      if (keep) {
+        // The category is left at «Другое»: this form is about what was eaten,
+        // and sorting it into the catalogue is a job for the catalogue.
+        const dish = await dishes.create.mutateAsync({
+          ...form,
+          name,
+          category: 'other',
+          recipe: '',
+        });
+        dishId = dish.id;
+      }
+      const body: MealLogCreate = { ...form, name, dishId, mealSlotId: null };
       await addMeal.mutateAsync(body);
-      toast('Добавлено');
+      toast(keep ? 'Добавлено и сохранено в справочник' : 'Добавлено');
       onClose();
     } catch (error) {
       toast(error instanceof Error ? error.message : 'Не удалось добавить', 'error');
     }
   };
+
+  const pending = addMeal.isPending || dishes.create.isPending;
+  const incomplete = form.name.trim() === '';
 
   return (
     <Sheet
@@ -467,9 +489,16 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
         <>
           <Button onClick={onClose}>Отмена</Button>
           <Button
+            disabled={incomplete}
+            loading={pending}
+            onClick={() => void submit(true)}
+          >
+            Добавить в справочник
+          </Button>
+          <Button
             variant="primary"
-            disabled={form.name.trim() === ''}
-            loading={addMeal.isPending}
+            disabled={incomplete}
+            loading={pending}
             onClick={() => void submit()}
           >
             Добавить
