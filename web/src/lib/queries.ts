@@ -104,7 +104,13 @@ export function useLogout() {
   return useMutation({
     mutationFn: () => api<unknown>('/auth/logout', { method: 'POST' }),
     onSuccess: () => {
-      client.clear();
+      /*
+       * Everything the previous account had loaded is dropped — except the
+       * question of who is signed in, which is asked again right after. Wiping
+       * that one too would leave nothing to refetch, and the screen would go
+       * on showing an account whose cookie is already gone.
+       */
+      client.removeQueries({ predicate: (query) => query.queryKey[0] !== 'auth' });
       void client.invalidateQueries({ queryKey: keys.auth });
     },
   });
