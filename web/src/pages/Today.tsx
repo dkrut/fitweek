@@ -139,8 +139,8 @@ export default function TodayPage() {
             <ProgressBar value={view.totals.completionPct} className="mt-2" />
             <dl className="mt-3 grid grid-cols-2 gap-2 text-center">
               {[
-                ['Жиры', view.totals.fatG, targets.plannedFatG],
-                ['Углеводы', view.totals.carbsG, targets.plannedCarbsG],
+                ['Жиры, г', view.totals.fatG, targets.plannedFatG],
+                ['Углеводы, г', view.totals.carbsG, targets.plannedCarbsG],
               ].map(([label, value, planned]) => (
                 <div key={String(label)} className="rounded-lg bg-surface-2 px-2 py-1.5">
                   <dt className="text-[11px] text-muted">{label}</dt>
