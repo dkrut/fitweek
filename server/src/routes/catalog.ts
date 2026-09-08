@@ -1,4 +1,4 @@
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNotNull, isNull } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import {
@@ -72,13 +72,34 @@ export async function registerCatalogRoutes(app: FastifyInstance): Promise<void>
   app.patch('/dishes/:id', async (request) => {
     const { id } = parse(idParam, request.params);
     const body = parse(dishInput.partial(), request.body);
+
+    const before = await request.db.select().from(t.dish).where(eq(t.dish.id, id));
+    if (!before[0]) throw notFound('Блюдо не найдено');
+
     const updated = await request.db
       .update(t.dish)
       .set(body)
       .where(eq(t.dish.id, id))
       .returning();
     if (!updated[0]) throw notFound('Блюдо не найдено');
-    return updated[0];
+
+    /*
+     * Numbers are not converted when the unit changes — nothing here knows how
+     * many grams are in one banana — and neither are the amounts in the plan.
+     * "Банан, 2" under grams would quietly mean two grams, so the plan falls
+     * back to the usual helping, the one state that is always sound.
+     */
+    let planAmountsReset = 0;
+    if (body.unit !== undefined && body.unit !== before[0].unit) {
+      const reset = await request.db
+        .update(t.planEntry)
+        .set({ amount: null })
+        .where(and(eq(t.planEntry.dishId, id), isNotNull(t.planEntry.amount)))
+        .returning({ id: t.planEntry.id });
+      planAmountsReset = reset.length;
+    }
+
+    return { ...updated[0], planAmountsReset };
   });
 
   /**

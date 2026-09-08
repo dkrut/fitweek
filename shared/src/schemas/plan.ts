@@ -13,6 +13,8 @@ export const planEntryInput = z
     dishId: id.nullable().default(null),
     workoutTemplateId: id.nullable().default(null),
     supplementId: id.nullable().default(null),
+    /** How much of the dish; null means the usual helping of that dish. */
+    amount: z.number().min(0.01).max(10000).nullable().default(null),
     position: z.number().int().min(0).default(0),
   })
   .superRefine((value, ctx) => {
@@ -46,6 +48,7 @@ export const planEntry = z.object({
   dishId: id.nullable(),
   workoutTemplateId: id.nullable(),
   supplementId: id.nullable(),
+  amount: z.number().nullable(),
   position: z.number().int(),
 });
 export type PlanEntry = z.infer<typeof planEntry>;

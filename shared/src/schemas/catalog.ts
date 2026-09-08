@@ -7,9 +7,23 @@ export const dishCategories = ['breakfast', 'main', 'snack', 'other'] as const;
 export const dishCategory = z.enum(dishCategories);
 export type DishCategory = z.infer<typeof dishCategory>;
 
+/*
+ * How a dish is measured. Pieces cover everything eaten whole — a portion, a
+ * banana, a pack of squid, a bottle of beer — because the arithmetic is the
+ * same for all of them and the wording lives in the name. Grams and millilitres
+ * are one behaviour under two labels, kept apart only so that kefir is not
+ * measured in grams.
+ */
+export const dishUnits = ['pcs', 'g', 'ml'] as const;
+export const dishUnit = z.enum(dishUnits);
+export type DishUnit = z.infer<typeof dishUnit>;
+
 export const dishInput = z.object({
   name: z.string().trim().min(1, 'Укажите название').max(120),
   category: dishCategory.default('other'),
+  unit: dishUnit.default('pcs'),
+  /** The usual helping, in the dish's own units; the plan falls back to it. */
+  defaultAmount: z.number().min(0.01).max(10000).default(1),
   kcal: z.number().min(0).max(5000),
   proteinG: z.number().min(0).max(500),
   fatG: z.number().min(0).max(500),

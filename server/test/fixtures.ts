@@ -18,11 +18,17 @@ export const SLOTS = [
   { name: 'Ужин', timeHint: '20:00', position: 2 },
 ] as const;
 
+/*
+ * Macros are stated per unit: per one helping for the dishes counted in pieces,
+ * per 100 g for the rice. The rice is here so that the weighed branch is not
+ * left to a test that has to invent its own dish.
+ */
 export const DISHES = [
-  { key: 'oats', name: 'Овсянка', category: 'breakfast', kcal: 400, proteinG: 20 },
-  { key: 'chicken', name: 'Курица с рисом', category: 'main', kcal: 600, proteinG: 45 },
-  { key: 'fish', name: 'Рыба с овощами', category: 'main', kcal: 500, proteinG: 40 },
-  { key: 'kefir', name: 'Кефир', category: 'snack', kcal: 100, proteinG: 8 },
+  { key: 'oats', name: 'Овсянка', category: 'breakfast', unit: 'pcs', defaultAmount: 1, kcal: 400, proteinG: 20 },
+  { key: 'chicken', name: 'Курица с рисом', category: 'main', unit: 'pcs', defaultAmount: 1, kcal: 600, proteinG: 45 },
+  { key: 'fish', name: 'Рыба с овощами', category: 'main', unit: 'pcs', defaultAmount: 1, kcal: 500, proteinG: 40 },
+  { key: 'kefir', name: 'Кефир', category: 'snack', unit: 'pcs', defaultAmount: 1, kcal: 100, proteinG: 8 },
+  { key: 'rice', name: 'Рис', category: 'main', unit: 'g', defaultAmount: 150, kcal: 130, proteinG: 3 },
 ] as const;
 
 export const EXERCISES = [
@@ -105,6 +111,8 @@ export async function insertFixture(db: Database): Promise<Fixture> {
       .values({
         name: dish.name,
         category: dish.category,
+        unit: dish.unit,
+        defaultAmount: dish.defaultAmount,
         kcal: dish.kcal,
         proteinG: dish.proteinG,
         fatG: 0,

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ChevronLeft, ChevronRight, Info, Pill, Plus } from 'lucide-react';
 import type { MealLog, MealLogCreate } from '@shared/index';
+import { dishUnitLabels, formatAmount, scaleMacros, unitStep } from '@shared/index';
 import {
   Button,
   Card,
@@ -13,6 +14,7 @@ import {
   Ring,
   Field,
   Input,
+  NumberStepper,
   Select,
   Sheet,
   Spinner,
@@ -209,6 +211,11 @@ export default function TodayPage() {
                       )}
                     >
                       {meal.name}
+                      {/* A single piece is not worth the ink: "Овсянка ×1"
+                          tells nobody anything. */}
+                      {formatAmount(meal.amount, meal.unit) ? (
+                        <span className="text-muted"> {formatAmount(meal.amount, meal.unit)}</span>
+                      ) : null}
                     </span>
                   </div>
                   <div className="mt-0.5 flex items-center gap-2 text-[12px] text-muted">
@@ -219,6 +226,8 @@ export default function TodayPage() {
                     {/* Without the mark it is a puzzle why the target did not
                         move when the meal was added. */}
                     {meal.planned ? null : <span>· сверх плана</span>}
+                    {/* Why this row has no amount to turn: it is not a dish. */}
+                    {meal.dishId === null ? <span>· вручную</span> : null}
                     {meal.fatG === 0 && meal.carbsG === 0 ? (
                       <span title="Жиры и углеводы не заполнены">
                         <Info size={12} />
@@ -422,9 +431,11 @@ function StartWorkout({ date }: { date: string }) {
 /* ----------------------------- Unplanned meal ----------------------------- */
 
 /**
- * A meal eaten outside the plan is described on the spot. A dish from the
- * catalogue fills the same fields rather than skipping them: half a portion,
- * a second helping — what was eaten rarely matches the card exactly.
+ * A meal eaten outside the plan is described on the spot, and it is one of two
+ * things. A dish from the catalogue: pick it and say how much. Something else
+ * entirely: a name and four numbers for the whole of it, with no amount, since
+ * a quantity beside hand-written totals would only be a second account of the
+ * same meal.
  */
 const emptyMeal = {
   name: '',
@@ -446,31 +457,22 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
    * question nobody asked.
    */
   const [busy, setBusy] = useState<'add' | 'keep' | null>(null);
-  /*
-   * Which dish of the catalogue this is, if any. Editing the numbers keeps the
-   * link: half a portion of porridge is still porridge, and the journal row
-   * carries its own copy of the figures anyway.
-   */
   const [dishId, setDishId] = useState<number | null>(null);
+  const [amount, setAmount] = useState(1);
   const catalogue = dishes.list.data ?? [];
+  const dish = dishId === null ? undefined : catalogue.find((item) => item.id === dishId);
+  const preview = dish ? scaleMacros(dish, dish.unit, amount) : null;
 
   const pick = (value: string) => {
     if (value === '') {
-      // Back to a dish of one's own; the numbers stay to be edited from.
+      // Back to a dish of one's own; the fields keep whatever is in them.
       setDishId(null);
       return;
     }
-    const dish = catalogue.find((item) => item.id === Number(value));
-    if (!dish) return;
-    setDishId(dish.id);
-    setForm({
-      name: dish.name,
-      kcal: dish.kcal,
-      proteinG: dish.proteinG,
-      fatG: dish.fatG,
-      carbsG: dish.carbsG,
-      portion: dish.portion,
-    });
+    const next = catalogue.find((item) => item.id === Number(value));
+    if (!next) return;
+    setDishId(next.id);
+    setAmount(next.defaultAmount);
   };
 
   const set = <K extends keyof typeof emptyMeal>(key: K, value: (typeof emptyMeal)[K]) =>
@@ -490,25 +492,34 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
    */
   const submit = async (keep = false) => {
     const name = form.name.trim();
-    if (!name) {
+    if (dishId === null && !name) {
       toast('Укажите название', 'error');
       return;
     }
     setBusy(keep ? 'keep' : 'add');
     try {
-      let linked = dishId;
+      let body: MealLogCreate;
       if (keep) {
-        // The category is left at «Другое»: this form is about what was eaten,
-        // and sorting it into the catalogue is a job for the catalogue.
-        const dish = await dishes.create.mutateAsync({
+        /*
+         * The four numbers stood for everything eaten, so the dish they make is
+         * counted in pieces at one helping — the only reading that loses
+         * nothing. The category is left at «Другое»: this form is about what
+         * was eaten, and sorting it into the catalogue is the catalogue's job.
+         */
+        const created = await dishes.create.mutateAsync({
           ...form,
           name,
           category: 'other',
+          unit: 'pcs',
+          defaultAmount: 1,
           recipe: '',
         });
-        linked = dish.id;
+        body = { dishId: created.id, amount: 1, mealSlotId: null };
+      } else if (dishId !== null) {
+        body = { dishId, amount, mealSlotId: null };
+      } else {
+        body = { ...form, name, dishId: null, amount: null, mealSlotId: null };
       }
-      const body: MealLogCreate = { ...form, name, dishId: linked, mealSlotId: null };
       await addMeal.mutateAsync(body);
       toast(keep ? 'Добавлено и сохранено в справочник' : 'Добавлено');
       onClose();
@@ -520,25 +531,14 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
   };
 
   // Neither button is available while the other one writes.
-  const disabled = form.name.trim() === '' || busy !== null;
+  const disabled = (dishId === null && form.name.trim() === '') || busy !== null;
 
   /*
-   * The dish this was taken from, and whether anything about it was changed.
-   * Half a portion of porridge is not the porridge card — it is a card of its
-   * own, worth keeping for the next time. An untouched copy is not: it is
-   * already in the catalogue, and saving it again only makes a twin.
+   * Only a row of one's own is worth keeping. A dish taken from the catalogue
+   * differs from its card by the amount alone, and a helping and a half of
+   * porridge is not a second porridge to file away.
    */
-  const source = dishId === null ? null : catalogue.find((item) => item.id === dishId);
-  const edited =
-    source !== undefined &&
-    source !== null &&
-    (form.name.trim() !== source.name ||
-      form.kcal !== source.kcal ||
-      form.proteinG !== source.proteinG ||
-      form.fatG !== source.fatG ||
-      form.carbsG !== source.carbsG ||
-      form.portion.trim() !== source.portion);
-  const canKeep = dishId === null || edited;
+  const canKeep = dishId === null;
 
   return (
     <Sheet
@@ -577,76 +577,119 @@ function AddMealSheet({ date, onClose }: { date: string; onClose: () => void }) 
 
         {/* With an empty catalogue there is nothing to take from it. */}
         {catalogue.length > 0 ? (
-          <Field label="Взять из справочника" hint="Цифры подставятся — поправьте под съеденное">
+          <Field label="Блюдо">
             <Select value={dishId ?? ''} onChange={(event) => pick(event.target.value)}>
-              <option value="">— своё блюдо —</option>
+              <option value="">— своё, вписать руками —</option>
               <DishOptions dishes={catalogue} />
             </Select>
           </Field>
         ) : null}
 
-        <Field label="Название">
-          <Input
-            value={form.name}
-            onChange={(event) => set('name', event.target.value)}
-            placeholder="например, печенье"
-            autoFocus
-          />
-        </Field>
+        {dish ? (
+          <>
+            <Field label="Сколько съел" group>
+              <NumberStepper
+                value={amount}
+                onChange={(value) => setAmount(value ?? 0)}
+                step={unitStep(dish.unit)}
+                min={0}
+                max={10000}
+                suffix={dishUnitLabels[dish.unit]}
+              />
+            </Field>
 
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Field label="Ккал">
-            <Input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              placeholder="0"
-              value={form.kcal === 0 ? '' : form.kcal}
-              onChange={(event) => set('kcal', Number(event.target.value) || 0)}
-            />
-          </Field>
-          <Field label="Белок, г">
-            <Input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              placeholder="0"
-              value={form.proteinG === 0 ? '' : form.proteinG}
-              onChange={(event) => set('proteinG', Number(event.target.value) || 0)}
-            />
-          </Field>
-          <Field label="Жиры, г">
-            <Input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              placeholder="0"
-              value={form.fatG === 0 ? '' : form.fatG}
-              onChange={(event) => set('fatG', Number(event.target.value) || 0)}
-            />
-          </Field>
-          <Field label="Углеводы, г">
-            <Input
-              type="number"
-              inputMode="decimal"
-              min={0}
-              placeholder="0"
-              value={form.carbsG === 0 ? '' : form.carbsG}
-              onChange={(event) => set('carbsG', Number(event.target.value) || 0)}
-            />
-          </Field>
-        </div>
+            {preview ? (
+              <div className="grid grid-cols-4 gap-3 text-center">
+                {[
+                  ['Ккал', preview.kcal],
+                  ['Белок', preview.proteinG],
+                  ['Жиры', preview.fatG],
+                  ['Углеводы', preview.carbsG],
+                ].map(([label, value]) => (
+                  <div key={String(label)} className="rounded-xl bg-surface-2 px-2 py-2.5">
+                    <div className="text-[11px] text-muted">{label}</div>
+                    <div className="text-sm font-semibold tabular-nums">
+                      {num(Number(value), 0)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <Field label="Название">
+              <Input
+                value={form.name}
+                onChange={(event) => set('name', event.target.value)}
+                placeholder="например, печенье"
+                autoFocus
+              />
+            </Field>
 
-        {mismatch ? (
-          <p className="rounded-xl bg-warn-soft px-3.5 py-2.5 text-[12px] text-warn">
-            По БЖУ выходит {Math.round(derivedKcal)} ккал, а указано {Math.round(form.kcal)}.
-            Проверьте цифры — где-то опечатка.
-          </p>
-        ) : null}
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <Field label="Ккал">
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  placeholder="0"
+                  value={form.kcal === 0 ? '' : form.kcal}
+                  onChange={(event) => set('kcal', Number(event.target.value) || 0)}
+                />
+              </Field>
+              <Field label="Белок, г">
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  placeholder="0"
+                  value={form.proteinG === 0 ? '' : form.proteinG}
+                  onChange={(event) => set('proteinG', Number(event.target.value) || 0)}
+                />
+              </Field>
+              <Field label="Жиры, г">
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  placeholder="0"
+                  value={form.fatG === 0 ? '' : form.fatG}
+                  onChange={(event) => set('fatG', Number(event.target.value) || 0)}
+                />
+              </Field>
+              <Field label="Углеводы, г">
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  placeholder="0"
+                  value={form.carbsG === 0 ? '' : form.carbsG}
+                  onChange={(event) => set('carbsG', Number(event.target.value) || 0)}
+                />
+              </Field>
+            </div>
 
-        <Field label="Порция" hint="Например: 4 штуки, 150 г">
-          <Input value={form.portion} onChange={(event) => set('portion', event.target.value)} />
-        </Field>
+            {mismatch ? (
+              <p className="rounded-xl bg-warn-soft px-3.5 py-2.5 text-[12px] text-warn">
+                По БЖУ выходит {Math.round(derivedKcal)} ккал, а указано {Math.round(form.kcal)}.
+                Проверьте цифры — где-то опечатка.
+              </p>
+            ) : null}
+
+            <Field label="Состав порции" hint="Например: 4 штуки, 150 г">
+              <Input
+                value={form.portion}
+                onChange={(event) => set('portion', event.target.value)}
+              />
+            </Field>
+
+            <p className="text-[12px] text-muted">
+              Числа — за всё съеденное. В справочник такое блюдо попадёт с этими КБЖУ за одну
+              штуку: если тут две порции, поделите.
+            </p>
+          </>
+        )}
       </div>
     </Sheet>
   );

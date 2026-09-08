@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { dateString, id } from './common.js';
-import { exerciseCategory, workoutKind } from './catalog.js';
+import { dishUnit, exerciseCategory, workoutKind } from './catalog.js';
 
 /* ---------------------------------- Meals --------------------------------- */
 
@@ -16,6 +16,13 @@ export const mealLog = z.object({
   timeHint: z.string(),
   dishId: id.nullable(),
   name: z.string(),
+  /**
+   * How much of the dish, in its own units. Null on a row written by hand:
+   * there the four numbers below stand for everything eaten, and a quantity
+   * beside them would only be a second, disagreeing account of the same meal.
+   */
+  amount: z.number().nullable(),
+  unit: dishUnit,
   kcal: z.number(),
   proteinG: z.number(),
   fatG: z.number(),
@@ -25,13 +32,26 @@ export const mealLog = z.object({
   completed: z.boolean(),
   /** False for a meal eaten on top of the plan; it never raises the target. */
   planned: z.boolean(),
+  /** The norm this row was created with. Frozen: corrections do not move it. */
+  plannedKcal: z.number(),
+  plannedProteinG: z.number(),
+  plannedFatG: z.number(),
+  plannedCarbsG: z.number(),
   position: z.number().int(),
 });
 export type MealLog = z.infer<typeof mealLog>;
 
+const macroKeys = ['kcal', 'proteinG', 'fatG', 'carbsG'] as const;
+
+/*
+ * A row is either a dish and an amount, or a name and four numbers. The patch
+ * enforces that split: sending both is what used to let the two halves drift
+ * apart, so it is rejected rather than resolved by some precedence rule.
+ */
 export const mealLogPatch = z
   .object({
     completed: z.boolean(),
+    amount: z.number().min(0.01).max(10000),
     dishId: id.nullable(),
     name: z.string().trim().min(1).max(120),
     kcal: z.number().min(0).max(5000),
@@ -40,19 +60,52 @@ export const mealLogPatch = z
     carbsG: z.number().min(0).max(1000),
     portion: z.string().max(200),
   })
-  .partial();
+  .partial()
+  .superRefine((value, ctx) => {
+    const hasMacros = macroKeys.some((key) => value[key] !== undefined);
+    if (value.amount !== undefined && hasMacros) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Либо количество, либо КБЖУ — вместе они разойдутся',
+      });
+    }
+    if (value.amount !== undefined && value.dishId === null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'У записи без блюда нет количества',
+      });
+    }
+  });
 export type MealLogPatch = z.infer<typeof mealLogPatch>;
 
-export const mealLogCreate = z.object({
-  mealSlotId: id.nullable().default(null),
-  dishId: id.nullable().default(null),
-  name: z.string().trim().max(120).optional(),
-  kcal: z.number().min(0).max(5000).optional(),
-  proteinG: z.number().min(0).max(500).optional(),
-  fatG: z.number().min(0).max(500).optional(),
-  carbsG: z.number().min(0).max(1000).optional(),
-  portion: z.string().trim().max(200).optional(),
-});
+export const mealLogCreate = z
+  .object({
+    mealSlotId: id.nullable().default(null),
+    dishId: id.nullable().default(null),
+    /** With a dish: how much of it. Null falls back to the usual helping. */
+    amount: z.number().min(0.01).max(10000).nullable().default(null),
+    name: z.string().trim().max(120).optional(),
+    kcal: z.number().min(0).max(5000).optional(),
+    proteinG: z.number().min(0).max(500).optional(),
+    fatG: z.number().min(0).max(500).optional(),
+    carbsG: z.number().min(0).max(1000).optional(),
+    portion: z.string().trim().max(200).optional(),
+  })
+  .superRefine((value, ctx) => {
+    // The same split the patch enforces, at the point the row is born.
+    if (value.dishId !== null && macroKeys.some((key) => value[key] !== undefined)) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'У блюда из справочника КБЖУ считаются из количества',
+      });
+    }
+    if (value.dishId === null && value.amount !== null) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'У записи без блюда нет количества',
+      });
+    }
+  });
 export type MealLogCreate = z.infer<typeof mealLogCreate>;
 
 /* ---------------------------------- Sets ---------------------------------- */

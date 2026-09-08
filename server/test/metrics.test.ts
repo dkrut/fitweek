@@ -17,6 +17,32 @@ describe('метрики', () => {
     await ctx.close();
   });
 
+  it('норма в прогрессе не идёт за правкой количества', async () => {
+    const date = today();
+    const day = await getDayView(ctx.db, date);
+    const meal = day.meals[0]!;
+
+    // Twice the helping, eaten: the fact grows, the plan of the day does not.
+    await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/meal-logs/${meal.id}`,
+      headers: { cookie: ctx.cookie },
+      payload: { amount: 2 },
+    });
+    await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/meal-logs/${meal.id}`,
+      headers: { cookie: ctx.cookie },
+      payload: { completed: true },
+    });
+
+    const overview = await getMetricsOverview(ctx.db, addDays(date, -30), date);
+    const nutrition = overview.nutrition.find((row) => row.date === date)!;
+
+    expect(nutrition.kcal).toBe(meal.kcal * 2);
+    expect(nutrition.plannedKcal).toBe(day.totals.plannedKcal);
+  });
+
   it('оценивает 1ПМ по формуле Эпли', () => {
     expect(epley1rm(100, 1)).toBeCloseTo(103.3, 1);
     expect(epley1rm(60, 10)).toBeCloseTo(80, 1);

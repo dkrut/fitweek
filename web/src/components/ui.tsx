@@ -140,22 +140,52 @@ export function Field({
   error,
   children,
   className,
+  group = false,
 }: {
   label: string;
   hint?: string;
   error?: string;
   children: ReactNode;
   className?: string;
+  /**
+   * Set for a field holding several controls rather than one — a segmented
+   * switch, a stepper. A `<label>` forwards every click inside it, empty space
+   * included, to the first labelable descendant, and `<button>` is labelable:
+   * a tap beside the segments would pick the first one, a tap on the caption of
+   * a stepper would press its minus. Such a field is a group, not a label.
+   */
+  group?: boolean;
 }) {
+  const captionId = useId();
+  const caption = (
+    <span
+      id={group ? captionId : undefined}
+      className="mb-1.5 block text-[13px] font-medium text-muted"
+    >
+      {label}
+    </span>
+  );
+  const note = error ? (
+    <span className="mt-1 block text-[12px] text-danger">{error}</span>
+  ) : hint ? (
+    <span className="mt-1 block text-[12px] text-muted">{hint}</span>
+  ) : null;
+
+  if (group) {
+    return (
+      <div role="group" aria-labelledby={captionId} className={cx('block', className)}>
+        {caption}
+        {children}
+        {note}
+      </div>
+    );
+  }
+
   return (
     <label className={cx('block', className)}>
-      <span className="mb-1.5 block text-[13px] font-medium text-muted">{label}</span>
+      {caption}
       {children}
-      {error ? (
-        <span className="mt-1 block text-[12px] text-danger">{error}</span>
-      ) : hint ? (
-        <span className="mt-1 block text-[12px] text-muted">{hint}</span>
-      ) : null}
+      {note}
     </label>
   );
 }
@@ -537,6 +567,7 @@ export function Sheet({
       <button
         type="button"
         aria-label="Закрыть"
+        data-backdrop
         onClick={onClose}
         className="absolute inset-0 bg-black/45 backdrop-blur-[2px]"
       />
@@ -544,7 +575,12 @@ export function Sheet({
         className={cx(
           'relative flex max-h-[92dvh] w-full flex-col overflow-hidden bg-surface',
           'rounded-t-3xl sm:rounded-3xl sm:border sm:border-border',
-          wide ? 'sm:max-w-3xl' : 'sm:max-w-lg',
+          /*
+           * The wide sheet is sized by its busiest footer: four buttons need
+           * 554px, so anything under xl wraps them. 2xl leaves room to spare
+           * without the form sprawling across a desktop screen.
+           */
+          wide ? 'sm:max-w-2xl' : 'sm:max-w-lg',
         )}
       >
         <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
@@ -556,8 +592,21 @@ export function Sheet({
           </IconButton>
         </header>
         <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4">{children}</div>
+        {/*
+          * A row of buttons only works while they fit on one. On a phone they do
+          * not, and wrapping a right-aligned row scatters them — one stranded at
+          * the left, the rest pushed to the right of the next line. So below sm
+          * they stack full width instead, in the order they were given: the
+          * primary action ends up nearest the thumb, a destructive one furthest.
+          */}
         {footer ? (
-          <footer className="flex flex-wrap justify-end gap-2 border-t border-border px-5 py-3.5">
+          <footer
+            className={cx(
+              'flex flex-col gap-2 border-t border-border px-5 py-3.5',
+              'sm:flex-row sm:flex-wrap sm:items-center sm:justify-end',
+              '[&>button]:w-full sm:[&>button]:w-auto',
+            )}
+          >
             {footer}
           </footer>
         ) : null}

@@ -2,7 +2,14 @@ import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Pencil, Plus, Trash2, TriangleAlert } from 'lucide-react';
 import type { Dish, DishInput, MealSlot, MealSlotInput } from '@shared/index';
-import { dishCategories, dishCategoryLabels } from '@shared/index';
+import {
+  dishCategories,
+  dishCategoryLabels,
+  dishUnitFormLabels,
+  dishUnitLabels,
+  dishUnits,
+  unitBase,
+} from '@shared/index';
 import { PageHeader } from '../components/Layout';
 import {
   Badge,
@@ -28,6 +35,8 @@ import { num, plural } from '../lib/format';
 const emptyDish: DishInput = {
   name: '',
   category: 'other',
+  unit: 'pcs',
+  defaultAmount: 1,
   kcal: 0,
   proteinG: 0,
   fatG: 0,
@@ -178,7 +187,13 @@ function Dishes() {
                   <p className="truncate text-sm font-medium">{dish.name}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] tabular-nums text-muted">
                     <Badge>{dishCategoryLabels[dish.category]}</Badge>
-                    <span>{num(dish.kcal, 0)} ккал</span>
+                    {/* Per what, when it is not simply per one of them. */}
+                    <span>
+                      {num(dish.kcal, 0)} ккал
+                      {dish.unit === 'pcs'
+                        ? ''
+                        : ` / ${unitBase(dish.unit)} ${dishUnitLabels[dish.unit]}`}
+                    </span>
                     <span className="text-success">Б {num(dish.proteinG, 0)}</span>
                     <span className={cx(dish.fatG === 0 && 'opacity-50')}>
                       Ж {num(dish.fatG, 0)}
@@ -227,6 +242,8 @@ function DishSheet({ dish, onClose }: { dish: Dish | null; onClose: () => void }
       ? {
           name: dish.name,
           category: dish.category,
+          unit: dish.unit,
+          defaultAmount: dish.defaultAmount,
           kcal: dish.kcal,
           proteinG: dish.proteinG,
           fatG: dish.fatG,
@@ -289,7 +306,7 @@ function DishSheet({ dish, onClose }: { dish: Dish | null; onClose: () => void }
           <Input value={form.name} onChange={(event) => set('name', event.target.value)} />
         </Field>
 
-        <Field label="Категория">
+        <Field label="Категория" group>
           <Segmented
             value={form.category}
             options={dishCategories.map((value) => ({
@@ -300,6 +317,64 @@ function DishSheet({ dish, onClose }: { dish: Dish | null; onClose: () => void }
             className="flex-wrap"
           />
         </Field>
+
+        <Field
+          group
+          label="Как меряется"
+          hint={
+            form.unit === 'pcs'
+              ? 'Порция, банан, упаковка, бутылка — всё это штуки.'
+              : 'Как на упаковке. Порцию задаёте отдельно, ниже.'
+          }
+        >
+          <Segmented
+            value={form.unit}
+            options={dishUnits.map((value) => ({ value, label: dishUnitFormLabels[value] }))}
+            onChange={(value) => {
+              setForm((current) => {
+                /*
+                 * The helping starts at whatever is natural for the new unit:
+                 * one of something counted in pieces, and the hundred grams the
+                 * macros are stated for otherwise. Carrying the old number over
+                 * would read as "обычно ем 180 штук" one way and "обычно ем 1 г"
+                 * the other. Between г and мл nothing changes in kind, so a
+                 * helping already typed there is left alone.
+                 */
+                const wasPieces = current.unit === 'pcs';
+                const isPieces = value === 'pcs';
+                return {
+                  ...current,
+                  unit: value,
+                  defaultAmount:
+                    wasPieces === isPieces ? current.defaultAmount : isPieces ? 1 : 100,
+                };
+              });
+            }}
+            className="flex-wrap"
+          />
+        </Field>
+
+        {form.unit === 'pcs' ? null : (
+          <Field label="Обычная порция" hint="Столько подставится в план и в журнал по умолчанию">
+            <div className="flex items-center gap-2">
+              <div className="w-32">
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  min={0}
+                  value={form.defaultAmount === 0 ? '' : form.defaultAmount}
+                  onChange={(event) => set('defaultAmount', Number(event.target.value) || 0)}
+                />
+              </div>
+              <span className="text-sm text-muted">{dishUnitLabels[form.unit]}</span>
+            </div>
+          </Field>
+        )}
+
+        <p className="text-[13px] font-medium text-muted">
+          КБЖУ за{' '}
+          {form.unit === 'pcs' ? 'одну штуку' : `${unitBase(form.unit)} ${dishUnitLabels[form.unit]}`}
+        </p>
 
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Field label="Ккал">
@@ -351,7 +426,7 @@ function DishSheet({ dish, onClose }: { dish: Dish | null; onClose: () => void }
           </p>
         ) : null}
 
-        <Field label="Порция" hint="Например: грудка 250 г + гречка 70 г сухой">
+        <Field label="Состав порции" hint="Например: грудка 250 г + гречка 70 г сухой">
           <Input value={form.portion} onChange={(event) => set('portion', event.target.value)} />
         </Field>
 

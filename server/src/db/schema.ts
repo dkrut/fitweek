@@ -10,6 +10,14 @@ import {
 
 const now = sql`(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))`;
 
+/*
+ * Spelled out rather than imported from `dishUnit` in shared: drizzle-kit reads
+ * this file on its own, without the workspace path aliases. The zod enum is the
+ * source of truth, and the two are checked against each other by the compiler
+ * wherever a row meets a schema.
+ */
+type DishUnitValue = 'pcs' | 'g' | 'ml';
+
 /* ========================================================================== */
 /*                             User and sessions                              */
 /* ========================================================================== */
@@ -62,6 +70,15 @@ export const dish = sqliteTable(
     id: integer('id').primaryKey({ autoIncrement: true }),
     name: text('name').notNull(),
     category: text('category').notNull().default('other'),
+    /*
+     * How the dish is measured, and therefore what the macros below are for:
+     * one piece for 'pcs', a hundred grams for 'g', a hundred millilitres for
+     * 'ml'. The wording of a piece — a portion, a bottle, a pack — belongs to
+     * the name: "Пиво 0.5" needs no unit label beyond the count.
+     */
+    unit: text('unit').$type<DishUnitValue>().notNull().default('pcs'),
+    /** The usual helping, in those units. Always 1 for a dish counted in pieces. */
+    defaultAmount: real('default_amount').notNull().default(1),
     kcal: real('kcal').notNull().default(0),
     proteinG: real('protein_g').notNull().default(0),
     fatG: real('fat_g').notNull().default(0),
@@ -163,6 +180,14 @@ export const planEntry = sqliteTable(
     supplementId: integer('supplement_id').references(() => supplement.id, {
       onDelete: 'cascade',
     }),
+    /*
+     * How much of the dish this day of the week calls for, in the dish's own
+     * units. NULL means the usual helping, so that correcting the dish reaches
+     * the plan instead of leaving two numbers to be kept in step by hand. It is
+     * also the state to fall back to whenever the amount stops making sense —
+     * changing the unit of a dish resets it here.
+     */
+    amount: real('amount'),
     position: integer('position').notNull().default(0),
   },
   (t) => [index('plan_entry_plan_day_idx').on(t.planId, t.weekday, t.position)],
@@ -192,6 +217,15 @@ export const mealLog = sqliteTable(
     timeHint: text('time_hint').notNull().default(''),
     dishId: integer('dish_id').references(() => dish.id, { onDelete: 'set null' }),
     name: text('name').notNull(),
+    /*
+     * A row is one of two kinds, never a mixture. Taken from the catalogue: a
+     * dish and an amount, macros computed from them. Written by hand: four
+     * numbers for everything eaten, and no amount at all — hence NULL. Keeping
+     * both halves editable is what used to let them contradict each other.
+     */
+    amount: real('amount'),
+    /** A snapshot, like the macros: a row from March keeps saying "×2". */
+    unit: text('unit').$type<DishUnitValue>().notNull().default('pcs'),
     kcal: real('kcal').notNull().default(0),
     proteinG: real('protein_g').notNull().default(0),
     fatG: real('fat_g').notNull().default(0),
@@ -205,6 +239,16 @@ export const mealLog = sqliteTable(
      * what was planned, and going over it has to stay visible as going over.
      */
     planned: integer('planned', { mode: 'boolean' }).notNull().default(true),
+    /*
+     * The norm this row was created with, frozen. The macros above are the
+     * fact and move with the amount; these do not. Reading the target off the
+     * fact — as the day used to — made every correction excuse itself: eat
+     * twice the planned helping and the target quietly doubled with it.
+     */
+    plannedKcal: real('planned_kcal').notNull().default(0),
+    plannedProteinG: real('planned_protein_g').notNull().default(0),
+    plannedFatG: real('planned_fat_g').notNull().default(0),
+    plannedCarbsG: real('planned_carbs_g').notNull().default(0),
     position: integer('position').notNull().default(0),
   },
   (t) => [index('meal_log_date_idx').on(t.date, t.position)],

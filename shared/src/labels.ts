@@ -1,5 +1,6 @@
 import type {
   DishCategory,
+  DishUnit,
   ExerciseCategory,
   MuscleGroup,
   WorkoutKind,
@@ -91,4 +92,61 @@ export function exerciseFields(
     band: strength,
     distance: category === 'cardio',
   };
+}
+
+/* --------------------------------- Amounts -------------------------------- */
+
+export const dishUnitLabels: Record<DishUnit, string> = {
+  pcs: 'шт',
+  g: 'г',
+  ml: 'мл',
+};
+
+export const dishUnitFormLabels: Record<DishUnit, string> = {
+  pcs: 'штуками',
+  g: 'в граммах',
+  ml: 'в миллилитрах',
+};
+
+/**
+ * What the macros of a dish are stated for. A hundred grams is the number
+ * printed on every package, so it is a constant rather than a field: a dish
+ * measured by a 30 g scoop is a dish counted in pieces and named after one.
+ */
+export function unitBase(unit: DishUnit): number {
+  return unit === 'pcs' ? 1 : 100;
+}
+
+/** Half a helping is common; ten grams is as fine as weighing gets. */
+export function unitStep(unit: DishUnit): number {
+  return unit === 'pcs' ? 0.5 : 10;
+}
+
+export interface Macros {
+  kcal: number;
+  proteinG: number;
+  fatG: number;
+  carbsG: number;
+}
+
+/** Macros of `amount` units, given the macros of one base of the dish. */
+export function scaleMacros(perBase: Macros, unit: DishUnit, amount: number): Macros {
+  const k = amount / unitBase(unit);
+  const round = (value: number) => Math.round(value * 10) / 10;
+  return {
+    kcal: round(perBase.kcal * k),
+    proteinG: round(perBase.proteinG * k),
+    fatG: round(perBase.fatG * k),
+    carbsG: round(perBase.carbsG * k),
+  };
+}
+
+/**
+ * How an amount reads next to a name. A single piece says nothing worth the
+ * ink — "Овсянка ×1" is noise — so it comes back empty.
+ */
+export function formatAmount(amount: number | null, unit: DishUnit): string {
+  if (amount === null) return '';
+  if (unit === 'pcs') return amount === 1 ? '' : `×${amount}`;
+  return `${amount} ${dishUnitLabels[unit]}`;
 }

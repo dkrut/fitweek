@@ -150,13 +150,13 @@ function AddSetSheet({
         {planned.notes ? <p className="text-[13px] text-muted">{planned.notes}</p> : null}
 
         {fields.weight ? (
-          <Field label="Вес, кг" hint="Оставьте пустым для упражнений с весом тела">
+          <Field label="Вес, кг" hint="Оставьте пустым для упражнений с весом тела" group>
             <NumberStepper value={weight} onChange={setWeight} step={2.5} max={500} suffix="кг" />
           </Field>
         ) : null}
 
         {fields.time ? (
-          <Field label="Время, мин">
+          <Field label="Время, мин" group>
             {/* Seconds in the database, minutes in the field: easier to type. */}
             <NumberStepper
               value={seconds === null ? null : Math.round(seconds / 60)}
@@ -184,7 +184,7 @@ function AddSetSheet({
         ) : null}
 
         {fields.reps ? (
-          <Field label="Повторы">
+          <Field label="Повторы" group>
             <NumberStepper value={reps} onChange={setReps} step={1} max={200} />
           </Field>
         ) : null}

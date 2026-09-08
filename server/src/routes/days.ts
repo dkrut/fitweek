@@ -9,7 +9,9 @@ import {
   setLogPatch,
   supplementLogPatch,
   workoutLogPatch,
+  scaleMacros,
   workoutStartInput,
+  type DishUnit,
   type WorkoutKind,
 } from '@shared/index.js';
 import * as t from '../db/schema.js';
@@ -89,17 +91,23 @@ export async function registerDayRoutes(app: FastifyInstance): Promise<void> {
     let carbsG = body.carbsG ?? 0;
     let portion = body.portion ?? '';
     let recipe = '';
+    // A row written by hand has no amount: its four numbers are the whole meal.
+    let amount: number | null = null;
+    let unit: DishUnit = 'pcs';
 
     if (body.dishId !== null) {
       const dishes = await request.db.select().from(t.dish).where(eq(t.dish.id, body.dishId));
       const dish = dishes[0];
       if (!dish) throw notFound('Блюдо не найдено');
       // Catalogue values are copied as a snapshot; see the note in the schema.
+      unit = dish.unit;
+      amount = body.amount ?? dish.defaultAmount;
+      const macros = scaleMacros(dish, unit, amount);
       name = body.name ?? dish.name;
-      kcal = body.kcal ?? dish.kcal;
-      proteinG = body.proteinG ?? dish.proteinG;
-      fatG = body.fatG ?? dish.fatG;
-      carbsG = body.carbsG ?? dish.carbsG;
+      kcal = macros.kcal;
+      proteinG = macros.proteinG;
+      fatG = macros.fatG;
+      carbsG = macros.carbsG;
       portion = body.portion ?? dish.portion;
       recipe = dish.recipe;
     }
@@ -134,6 +142,8 @@ export async function registerDayRoutes(app: FastifyInstance): Promise<void> {
         timeHint,
         dishId: body.dishId,
         name,
+        amount,
+        unit,
         kcal,
         proteinG,
         fatG,
@@ -141,6 +151,8 @@ export async function registerDayRoutes(app: FastifyInstance): Promise<void> {
         portion,
         recipe,
         completed: false,
+        // Eaten on top of the plan, so it carries no norm of its own: the
+        // planned* columns stay at zero and the target of the day is untouched.
         planned: false,
         position: nextPosition,
       })
@@ -160,16 +172,44 @@ export async function registerDayRoutes(app: FastifyInstance): Promise<void> {
 
     const patch: Partial<typeof t.mealLog.$inferInsert> = { ...body };
 
-    // Swapping the dish carries its macros over unless explicit values came in.
-    if (body.dishId !== undefined && body.dishId !== null) {
-      const dishes = await request.db.select().from(t.dish).where(eq(t.dish.id, body.dishId));
+    /*
+     * Which of the two kinds of row this patch leaves behind. The schema keeps
+     * amount and macros from arriving together; here the row's own state joins
+     * in, so that a bare amount on a hand-written row is refused too.
+     */
+    const linkedTo = body.dishId !== undefined ? body.dishId : meal.dishId;
+    const hasMacros =
+      body.kcal !== undefined ||
+      body.proteinG !== undefined ||
+      body.fatG !== undefined ||
+      body.carbsG !== undefined;
+
+    if (hasMacros && linkedTo !== null) {
+      throw badRequest('У блюда из справочника КБЖУ считаются из количества');
+    }
+    if (body.amount !== undefined && linkedTo === null) {
+      throw badRequest('У записи без блюда нет количества');
+    }
+
+    if (body.dishId === null) {
+      /*
+       * Unlinking. The macros stay as something to correct from, the amount
+       * cannot: it counted helpings of a dish this row no longer claims to be.
+       * The recipe goes with the link — it was instructions for that dish.
+       */
+      patch.amount = null;
+      patch.recipe = '';
+    } else if (linkedTo !== null && (body.dishId !== undefined || body.amount !== undefined)) {
+      const dishes = await request.db.select().from(t.dish).where(eq(t.dish.id, linkedTo));
       const dish = dishes[0];
       if (!dish) throw notFound('Блюдо не найдено');
+      // A new dish arrives at its usual helping; the same dish keeps ours.
+      const fallback = body.dishId !== undefined ? dish.defaultAmount : (meal.amount ?? dish.defaultAmount);
+      const amount = body.amount ?? fallback;
       patch.name = body.name ?? dish.name;
-      patch.kcal = body.kcal ?? dish.kcal;
-      patch.proteinG = body.proteinG ?? dish.proteinG;
-      patch.fatG = body.fatG ?? dish.fatG;
-      patch.carbsG = body.carbsG ?? dish.carbsG;
+      patch.amount = amount;
+      patch.unit = dish.unit;
+      Object.assign(patch, scaleMacros(dish, dish.unit, amount));
       patch.portion = dish.portion;
       patch.recipe = dish.recipe;
     }

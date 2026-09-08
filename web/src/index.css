@@ -112,6 +112,29 @@
     color: inherit;
   }
 
+  /*
+   * Preflight leaves buttons at `cursor: default`, and a `select` never had a
+   * pointer to begin with, so a row that opens a sheet and a dropdown that
+   * unfolds a list both look like plain text. Hand the pointer back to anything
+   * that acts on a click — and only to it: a disabled control promises nothing.
+   */
+  button:not(:disabled),
+  select:not(:disabled),
+  summary {
+    cursor: pointer;
+  }
+
+  /*
+   * Two exceptions. The checkbox is ticked in place rather than opening
+   * anything, and reads better without the hand; the backdrop behind a sheet is
+   * a full-screen button, and a hand across the whole screen looks like a bug
+   * even though clicking it does close the sheet.
+   */
+  button[role='checkbox'],
+  button[data-backdrop] {
+    cursor: default;
+  }
+
   /* Drop the spinners on number fields: a finger cannot hit them anyway. */
   input[type='number']::-webkit-outer-spin-button,
   input[type='number']::-webkit-inner-spin-button {

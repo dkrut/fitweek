@@ -4,12 +4,14 @@ import type {
   DaySupplement,
   DayTotals,
   DayView,
+  DishUnit,
   MealLog,
   PlannedExercise,
   WorkoutLog,
   WorkoutKind,
   WorkoutStatus,
 } from '@shared/index.js';
+import { scaleMacros } from '@shared/index.js';
 import type { Database } from '../db/client.js';
 import * as t from '../db/schema.js';
 import { addDays, isFuture, isValidDate, today, weekdayOf } from '../lib/date.js';
@@ -45,16 +47,22 @@ function computeTotals(
    * A meal eaten on top of the plan counts as eaten but is no part of the
    * norm: it neither raises the target nor joins the list of things to tick.
    * Otherwise adding what you ate over the plan would quietly excuse it.
+   *
+   * The norm of a planned row comes from its own frozen copy rather than from
+   * its macros, for the same reason one step down: correcting the row — a
+   * bigger helping, something else eaten under that name — must move the fact
+   * alone. Read off the fact, the target would follow every correction and no
+   * day could ever be over.
    */
   let plannedMeals = 0;
 
   for (const meal of meals) {
     if (meal.planned) {
       plannedMeals += 1;
-      plannedKcal += meal.kcal;
-      plannedProteinG += meal.proteinG;
-      plannedFatG += meal.fatG;
-      plannedCarbsG += meal.carbsG;
+      plannedKcal += meal.plannedKcal;
+      plannedProteinG += meal.plannedProteinG;
+      plannedFatG += meal.plannedFatG;
+      plannedCarbsG += meal.plannedCarbsG;
     }
     if (meal.completed) {
       kcal += meal.kcal;
@@ -102,6 +110,8 @@ interface PlanProjection {
     timeHint: string;
     dishId: number | null;
     name: string;
+    amount: number;
+    unit: DishUnit;
     kcal: number;
     proteinG: number;
     fatG: number;
@@ -171,16 +181,20 @@ async function projectPlan(db: Database, planId: number, weekday: number): Promi
       const dish = entry.dishId === null ? undefined : dishById.get(entry.dishId);
       const slot = entry.mealSlotId === null ? undefined : slotById.get(entry.mealSlotId);
       if (!dish || !slot) continue;
+      // No amount on the entry means the usual helping, so that correcting the
+      // dish reaches every day that did not ask for something else.
+      const unit = dish.unit;
+      const amount = entry.amount ?? dish.defaultAmount;
+      const macros = scaleMacros(dish, unit, amount);
       meals.push({
         mealSlotId: slot.id,
         mealSlotName: slot.name,
         timeHint: slot.timeHint,
         dishId: dish.id,
         name: dish.name,
-        kcal: dish.kcal,
-        proteinG: dish.proteinG,
-        fatG: dish.fatG,
-        carbsG: dish.carbsG,
+        amount,
+        unit,
+        ...macros,
         portion: dish.portion,
         recipe: dish.recipe,
         position: slot.position * 100 + entry.position,
@@ -244,6 +258,52 @@ export async function loadTemplateExercises(
   }));
 }
 
+/** Anything that can read: the database itself or a transaction over it. */
+type Reader = Pick<Database, 'select'>;
+
+/**
+ * Whether anything at all was written for a date. A day with no rows was never
+ * lived: there is nothing in it a refill could overwrite.
+ */
+async function isBlank(db: Reader, date: string): Promise<boolean> {
+  const [meals, workouts, supplements] = await Promise.all([
+    db.select({ id: t.mealLog.id }).from(t.mealLog).where(eq(t.mealLog.date, date)).limit(1),
+    db.select({ id: t.workoutLog.id }).from(t.workoutLog).where(eq(t.workoutLog.date, date)).limit(1),
+    db
+      .select({ id: t.supplementLog.id })
+      .from(t.supplementLog)
+      .where(eq(t.supplementLog.date, date))
+      .limit(1),
+  ]);
+  return meals.length === 0 && workouts.length === 0 && supplements.length === 0;
+}
+
+/**
+ * Whether the day still has to be filled from the plan.
+ *
+ * Normally the answer is "only once": a materialised day lives its own life and
+ * later edits to the plan must not rewrite it. The exception is a day settled
+ * before any plan existed — the very first day of the app, or any date opened
+ * before the weekly plan was written. Such a day holds no plan (`planId` is
+ * null) and no rows at all, so there is no history to protect and leaving it
+ * empty for good is nobody's intent. A day materialised *from* a plan and then
+ * emptied by hand keeps its `planId`, and so is left alone.
+ */
+async function needsFilling(
+  db: Reader,
+  date: string,
+  planId: number | null,
+): Promise<boolean> {
+  const rows = await db
+    .select({ planId: t.dayLog.planId })
+    .from(t.dayLog)
+    .where(eq(t.dayLog.date, date));
+  const day = rows[0];
+  if (!day) return true;
+  if (day.planId !== null || planId === null) return false;
+  return isBlank(db, date);
+}
+
 /**
  * Creates journal rows for a date unless they already exist. Idempotent.
  * Future dates are never materialised — they are shown as a projection of the
@@ -252,18 +312,22 @@ export async function loadTemplateExercises(
 export async function materializeDay(db: Database, date: string): Promise<void> {
   if (isFuture(date)) return;
 
-  const existing = await db.select({ date: t.dayLog.date }).from(t.dayLog).where(eq(t.dayLog.date, date));
-  if (existing.length > 0) return;
-
   const planId = await getActivePlanId(db);
+  if (!(await needsFilling(db, date, planId))) return;
+
   const projection = planId === null ? { meals: [], workout: null, supplements: [] } : await projectPlan(db, planId, weekdayOf(date));
 
   await db.transaction(async (tx) => {
     // Re-checking inside the transaction guards against two racing requests.
     const again = await tx.select({ date: t.dayLog.date }).from(t.dayLog).where(eq(t.dayLog.date, date));
-    if (again.length > 0) return;
-
-    await tx.insert(t.dayLog).values({ date, planId, notes: '' });
+    if (again.length > 0) {
+      if (!(await needsFilling(tx, date, planId))) return;
+      // The row is there from an earlier, plan-less visit: adopt it rather than
+      // insert a second one, so its note survives the filling.
+      await tx.update(t.dayLog).set({ planId }).where(eq(t.dayLog.date, date));
+    } else {
+      await tx.insert(t.dayLog).values({ date, planId, notes: '' });
+    }
 
     if (projection.meals.length > 0) {
       await tx.insert(t.mealLog).values(
@@ -274,6 +338,8 @@ export async function materializeDay(db: Database, date: string): Promise<void> 
           timeHint: meal.timeHint,
           dishId: meal.dishId,
           name: meal.name,
+          amount: meal.amount,
+          unit: meal.unit,
           kcal: meal.kcal,
           proteinG: meal.proteinG,
           fatG: meal.fatG,
@@ -281,6 +347,12 @@ export async function materializeDay(db: Database, date: string): Promise<void> 
           portion: meal.portion,
           recipe: meal.recipe,
           completed: false,
+          // Fact and norm are born equal and part ways from here: eating twice
+          // the helping moves the first and leaves the second where it was.
+          plannedKcal: meal.kcal,
+          plannedProteinG: meal.proteinG,
+          plannedFatG: meal.fatG,
+          plannedCarbsG: meal.carbsG,
           position: index,
         })),
       );
@@ -462,6 +534,8 @@ export async function getDayView(db: Database, date: string): Promise<DayView> {
       timeHint: meal.timeHint,
       dishId: meal.dishId,
       name: meal.name,
+      amount: meal.amount,
+      unit: meal.unit,
       kcal: meal.kcal,
       proteinG: meal.proteinG,
       fatG: meal.fatG,
@@ -471,6 +545,10 @@ export async function getDayView(db: Database, date: string): Promise<DayView> {
       completed: false,
       // A projection is the plan itself, so every row of it is planned.
       planned: true,
+      plannedKcal: meal.kcal,
+      plannedProteinG: meal.proteinG,
+      plannedFatG: meal.fatG,
+      plannedCarbsG: meal.carbsG,
       position: index,
     }));
 

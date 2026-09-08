@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import * as t from '../src/db/schema.js';
 import { addDays, startOfWeek, today } from '../src/lib/date.js';
 import { getDaySummaries, getDayView, materializeDay } from '../src/services/day.js';
 import { createTestContext, type TestContext } from './helpers.js';
-import { WEEK } from './fixtures.js';
+import { WEEK, insertFixture } from './fixtures.js';
 
 /** How many meals the plan holds for that weekday. */
 function mealsOn(date: string): number {
@@ -297,5 +297,240 @@ describe('материализация дня', () => {
   it('отвергает некорректную дату', async () => {
     await expect(getDayView(ctx.db, '2026-02-30')).rejects.toThrow(/Некорректная дата/);
     await expect(getDayView(ctx.db, 'не-дата')).rejects.toThrow(/Некорректная дата/);
+  });
+});
+
+describe('количество и норма', () => {
+  let ctx: TestContext;
+
+  beforeEach(async () => {
+    ctx = await createTestContext();
+  });
+
+  afterEach(async () => {
+    await ctx.close();
+  });
+
+  /** Puts the weighed dish into the first slot of today, at `amount`. */
+  async function planRice(amount: number | null): Promise<void> {
+    const date = today();
+    const weekday = new Date(date + 'T00:00:00').getDay();
+    await ctx.db
+      .update(t.planEntry)
+      .set({ dishId: ctx.fixture!.dishIds.get('rice')!, amount })
+      .where(
+        and(
+          eq(t.planEntry.planId, ctx.fixture!.planId),
+          eq(t.planEntry.weekday, weekday),
+          eq(t.planEntry.kind, 'meal'),
+          eq(t.planEntry.mealSlotId, ctx.fixture!.slotIds[0]!),
+        ),
+      );
+  }
+
+  it('без количества в плане берёт обычную порцию блюда', async () => {
+    await planRice(null);
+    const view = await getDayView(ctx.db, today());
+    const rice = view.meals.find((meal) => meal.name === 'Рис')!;
+
+    // 130 kcal per 100 g, the usual helping being 150 g.
+    expect(rice.amount).toBe(150);
+    expect(rice.unit).toBe('g');
+    expect(rice.kcal).toBe(195);
+    expect(rice.proteinG).toBe(4.5);
+  });
+
+  it('количество в плане перекрывает обычную порцию', async () => {
+    await planRice(200);
+    const view = await getDayView(ctx.db, today());
+    const rice = view.meals.find((meal) => meal.name === 'Рис')!;
+
+    expect(rice.amount).toBe(200);
+    expect(rice.kcal).toBe(260);
+  });
+
+  it('норма дня замирает при материализации и не идёт за правкой количества', async () => {
+    await planRice(150);
+    const date = today();
+    const before = await getDayView(ctx.db, date);
+    const rice = before.meals.find((meal) => meal.name === 'Рис')!;
+    const norm = before.totals.plannedKcal;
+
+    // Twice the helping: the fact doubles for this row, the norm does not.
+    const patched = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/meal-logs/${rice.id}`,
+      headers: { cookie: ctx.cookie },
+      payload: { amount: 300, completed: true },
+    });
+    expect(patched.statusCode).toBe(200);
+
+    const after = await getDayView(ctx.db, date);
+    const eaten = after.meals.find((meal) => meal.name === 'Рис')!;
+
+    expect(eaten.kcal).toBe(390);
+    expect(eaten.plannedKcal).toBe(195);
+    expect(after.totals.plannedKcal).toBe(norm);
+    expect(after.totals.kcal).toBe(390);
+  });
+
+  it('открепление оставляет числа, но забирает количество', async () => {
+    const date = today();
+    const before = await getDayView(ctx.db, date);
+    const meal = before.meals[0]!;
+
+    const patched = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/meal-logs/${meal.id}`,
+      headers: { cookie: ctx.cookie },
+      payload: { dishId: null, name: 'Своё блюдо', kcal: 700, proteinG: 30, fatG: 20, carbsG: 60 },
+    });
+    expect(patched.statusCode).toBe(200);
+
+    const after = await getDayView(ctx.db, date);
+    const own = after.meals.find((item) => item.id === meal.id)!;
+
+    expect(own.dishId).toBeNull();
+    expect(own.amount).toBeNull();
+    expect(own.name).toBe('Своё блюдо');
+    expect(own.kcal).toBe(700);
+    // Still a row of the plan, so it still holds the norm it was born with.
+    expect(own.planned).toBe(true);
+    expect(own.plannedKcal).toBe(meal.kcal);
+    expect(after.totals.plannedKcal).toBe(before.totals.plannedKcal);
+  });
+
+  it('не принимает количество и КБЖУ вместе', async () => {
+    const view = await getDayView(ctx.db, today());
+    const meal = view.meals[0]!;
+
+    const response = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/meal-logs/${meal.id}`,
+      headers: { cookie: ctx.cookie },
+      payload: { amount: 2, kcal: 500 },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('не даёт количества записи без блюда', async () => {
+    const date = today();
+    const created = await ctx.app
+      .inject({
+        method: 'POST',
+        url: `/api/days/${date}/meals`,
+        headers: { cookie: ctx.cookie },
+        payload: { name: 'Печенье', kcal: 300 },
+      })
+      .then((r) => r.json());
+
+    const response = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/meal-logs/${created.id}`,
+      headers: { cookie: ctx.cookie },
+      payload: { amount: 2 },
+    });
+    expect(response.statusCode).toBe(400);
+  });
+
+  it('внеплановое блюдо из справочника считается по количеству', async () => {
+    const date = today();
+    const response = await ctx.app.inject({
+      method: 'POST',
+      url: `/api/days/${date}/meals`,
+      headers: { cookie: ctx.cookie },
+      payload: { dishId: ctx.fixture!.dishIds.get('rice')!, amount: 250 },
+    });
+    expect(response.statusCode).toBe(201);
+
+    const row = response.json();
+    expect(row.kcal).toBe(325);
+    expect(row.amount).toBe(250);
+    // Eaten on top of the plan carries no norm of its own.
+    expect(row.plannedKcal).toBe(0);
+  });
+
+  it('смена единицы блюда сбрасывает количества в плане', async () => {
+    await planRice(200);
+    const riceId = ctx.fixture!.dishIds.get('rice')!;
+
+    const response = await ctx.app.inject({
+      method: 'PATCH',
+      url: `/api/dishes/${riceId}`,
+      headers: { cookie: ctx.cookie },
+      payload: { unit: 'pcs', defaultAmount: 1, kcal: 195, proteinG: 4.5 },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().planAmountsReset).toBe(1);
+
+    const entries = await ctx.db
+      .select()
+      .from(t.planEntry)
+      .where(eq(t.planEntry.dishId, riceId));
+    expect(entries.every((entry) => entry.amount === null)).toBe(true);
+  });
+});
+
+describe('день, заведённый до плана', () => {
+  let ctx: TestContext;
+
+  beforeEach(async () => {
+    // No fixture: this is the very first run of the app, plan and all.
+    ctx = await createTestContext({ data: false });
+  });
+
+  afterEach(async () => {
+    await ctx.close();
+  });
+
+  it('дозаполняется из плана, когда план наконец появился', async () => {
+    const date = today();
+
+    // Opened the app before writing any plan: the day settles empty.
+    await materializeDay(ctx.db, date);
+    const empty = await getDayView(ctx.db, date);
+    expect(empty.materialized).toBe(true);
+    expect(empty.meals).toHaveLength(0);
+
+    // Now the plan is written, breakfast and all.
+    const fixture = await insertFixture(ctx.db);
+    expect(fixture.planId).toBeGreaterThan(0);
+
+    const filled = await getDayView(ctx.db, date);
+    expect(filled.meals.length).toBeGreaterThan(0);
+    expect(filled.totals.plannedKcal).toBeGreaterThan(0);
+
+    const rows = await ctx.db.select().from(t.dayLog).where(eq(t.dayLog.date, date));
+    // The day adopted the plan instead of gaining a second row.
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.planId).toBe(fixture.planId);
+  });
+
+  it('заметка пустого дня переживает дозаполнение', async () => {
+    const date = today();
+    await materializeDay(ctx.db, date);
+    await ctx.db.update(t.dayLog).set({ notes: 'болел' }).where(eq(t.dayLog.date, date));
+
+    await insertFixture(ctx.db);
+    const filled = await getDayView(ctx.db, date);
+
+    expect(filled.notes).toBe('болел');
+    expect(filled.meals.length).toBeGreaterThan(0);
+  });
+
+  it('день, опустошённый вручную, не заполняется заново', async () => {
+    const date = today();
+    await insertFixture(ctx.db);
+    const view = await getDayView(ctx.db, date);
+    expect(view.meals.length).toBeGreaterThan(0);
+
+    // Everything deleted by hand: that is a decision, not an empty slate.
+    await ctx.db.delete(t.mealLog).where(eq(t.mealLog.date, date));
+    await ctx.db.delete(t.workoutLog).where(eq(t.workoutLog.date, date));
+    await ctx.db.delete(t.supplementLog).where(eq(t.supplementLog.date, date));
+
+    await materializeDay(ctx.db, date);
+    const after = await getDayView(ctx.db, date);
+    expect(after.meals).toHaveLength(0);
   });
 });

@@ -1,14 +1,20 @@
 import { useEffect, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import type { Dish, MealLog } from '@shared/index';
-import { Button, Field, Input, Select, Sheet, useToast } from './ui';
+import { dishUnitLabels, scaleMacros, unitStep } from '@shared/index';
+import { Button, Field, Input, NumberStepper, Select, Sheet, useToast } from './ui';
 import { DishOptions } from './DishOptions';
 import { useDeleteMeal, useDishes, usePatchMeal } from '../lib/queries';
 import { num } from '../lib/format';
 
+const FREEFORM = 'free';
+
 /**
- * Viewing and editing a meal. Swapping the dish pulls in its macros, and the
- * values can still be corrected by hand: the journal keeps them as a snapshot.
+ * Viewing and editing a meal. A row is one of two kinds and the dish select
+ * says which: a dish from the catalogue with an amount, its macros computed;
+ * or something of one's own, four numbers and no amount. Editing the macros of
+ * a dish-linked row is not offered on purpose — a quantity and a hand-written
+ * total are two accounts of the same meal, and they drift apart.
  */
 export function MealSheet({
   meal,
@@ -25,55 +31,121 @@ export function MealSheet({
   const toast = useToast();
 
   const [dishId, setDishId] = useState<number | null>(null);
+  const [amount, setAmount] = useState<number | null>(null);
+  const [name, setName] = useState('');
   const [kcal, setKcal] = useState('');
   const [proteinG, setProteinG] = useState('');
   const [fatG, setFatG] = useState('');
   const [carbsG, setCarbsG] = useState('');
-  const [dirty, setDirty] = useState(false);
+  // Which button is working: both write, and one spinner for two lies.
+  const [keeping, setKeeping] = useState(false);
 
   useEffect(() => {
     if (!meal) return;
     setDishId(meal.dishId);
+    setAmount(meal.amount);
+    setName(meal.name);
     setKcal(String(meal.kcal));
     setProteinG(String(meal.proteinG));
     setFatG(String(meal.fatG));
     setCarbsG(String(meal.carbsG));
-    setDirty(false);
   }, [meal]);
 
   if (!meal) return null;
 
   const dishList: Dish[] = dishes.list.data ?? [];
+  const dish = dishId === null ? undefined : dishList.find((item) => item.id === dishId);
+  // Macros of a linked row follow the amount; of an unlinked one, the fields.
+  const preview = dish ? scaleMacros(dish, dish.unit, amount ?? dish.defaultAmount) : null;
 
   const pickDish = (value: string) => {
-    const id = value === '' ? null : Number(value);
-    setDishId(id);
-    setDirty(true);
-    const dish = dishList.find((item) => item.id === id);
-    if (dish) {
-      setKcal(String(dish.kcal));
-      setProteinG(String(dish.proteinG));
-      setFatG(String(dish.fatG));
-      setCarbsG(String(dish.carbsG));
+    if (value === FREEFORM) {
+      /*
+       * Unlinking gives a blank slate. Carrying the numbers over would clone a
+       * dish you have just said you did not eat, and a clone is far too easy to
+       * save by accident. A row that was hand-written to begin with is another
+       * matter: there the values are its own, and it gets them back.
+       */
+      const own = meal.dishId === null;
+      setDishId(null);
+      setAmount(null);
+      setName(own ? meal.name : '');
+      setKcal(own ? String(meal.kcal) : '');
+      setProteinG(own ? String(meal.proteinG) : '');
+      setFatG(own ? String(meal.fatG) : '');
+      setCarbsG(own ? String(meal.carbsG) : '');
+      return;
     }
+    const next = dishList.find((item) => item.id === Number(value));
+    if (!next) return;
+    setDishId(next.id);
+    // A different dish arrives at its own usual helping.
+    setAmount(next.defaultAmount);
+    setName(next.name);
   };
 
   const save = async () => {
+    if (dishId === null && !name.trim()) {
+      toast('Укажите название', 'error');
+      return;
+    }
     try {
       await patch.mutateAsync({
         id: meal.id,
-        patch: {
-          ...(dishId !== null && dishId !== meal.dishId ? { dishId } : {}),
-          kcal: Number(kcal) || 0,
-          proteinG: Number(proteinG) || 0,
-          fatG: Number(fatG) || 0,
-          carbsG: Number(carbsG) || 0,
-        },
+        patch:
+          dishId === null
+            ? {
+                dishId: null,
+                name: name.trim(),
+                kcal: Number(kcal) || 0,
+                proteinG: Number(proteinG) || 0,
+                fatG: Number(fatG) || 0,
+                carbsG: Number(carbsG) || 0,
+              }
+            : {
+                ...(dishId !== meal.dishId ? { dishId } : {}),
+                amount: amount ?? dish?.defaultAmount ?? 1,
+              },
       });
       toast('Сохранено');
       onClose();
     } catch (error) {
       toast(error instanceof Error ? error.message : 'Не удалось сохранить', 'error');
+    }
+  };
+
+  /*
+   * Filing a hand-written row into the catalogue. Its four numbers stood for
+   * everything eaten, so the dish they make is counted in pieces at one
+   * helping — the only reading that loses nothing — and the row then points at
+   * it, or the catalogue would gain a card with no relation to the day.
+   */
+  const keep = async () => {
+    if (!name.trim()) {
+      toast('Укажите название', 'error');
+      return;
+    }
+    setKeeping(true);
+    try {
+      const created = await dishes.create.mutateAsync({
+        name: name.trim(),
+        category: 'other',
+        unit: 'pcs',
+        defaultAmount: 1,
+        kcal: Number(kcal) || 0,
+        proteinG: Number(proteinG) || 0,
+        fatG: Number(fatG) || 0,
+        carbsG: Number(carbsG) || 0,
+        portion: meal.portion,
+        recipe: '',
+      });
+      await patch.mutateAsync({ id: meal.id, patch: { dishId: created.id, amount: 1 } });
+      toast('Сохранено в справочник');
+      onClose();
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Не удалось сохранить', 'error');
+    } finally {
+      setKeeping(false);
     }
   };
 
@@ -87,10 +159,22 @@ export function MealSheet({
     }
   };
 
+  const macroTiles = (values: Array<[string, number]>) => (
+    <div className="grid grid-cols-4 gap-3 text-center">
+      {values.map(([label, value]) => (
+        <div key={label} className="rounded-xl bg-surface-2 px-2 py-2.5">
+          <div className="text-[11px] text-muted">{label}</div>
+          <div className="text-sm font-semibold tabular-nums">{num(value, 0)}</div>
+        </div>
+      ))}
+    </div>
+  );
+
   return (
     <Sheet
       open
       onClose={onClose}
+      wide
       title={meal.name}
       footer={
         editable ? (
@@ -101,7 +185,18 @@ export function MealSheet({
             </Button>
             <div className="flex-1" />
             <Button onClick={onClose}>Отмена</Button>
-            <Button variant="primary" onClick={() => void save()} loading={patch.isPending}>
+            {/* Only a row of one's own is worth filing: a dish from the
+                catalogue differs from its card by the amount alone. */}
+            {dishId === null ? (
+              <Button loading={keeping} onClick={() => void keep()}>
+                Добавить в справочник
+              </Button>
+            ) : null}
+            <Button
+              variant="primary"
+              onClick={() => void save()}
+              loading={patch.isPending && !keeping}
+            >
               Сохранить
             </Button>
           </>
@@ -119,7 +214,7 @@ export function MealSheet({
           </span>
           {meal.portion ? (
             <span>
-              <span className="text-muted">Порция: </span>
+              <span className="text-muted">Состав: </span>
               {meal.portion}
             </span>
           ) : null}
@@ -134,80 +229,111 @@ export function MealSheet({
 
         {editable ? (
           <>
-            <Field label="Блюдо" hint="Замена подставит БЖУ из справочника">
-              <Select value={dishId ?? ''} onChange={(event) => pickDish(event.target.value)}>
-                <option value="">— без блюда из справочника —</option>
+            <Field label="Блюдо">
+              <Select
+                value={dishId === null ? FREEFORM : dishId}
+                onChange={(event) => pickDish(event.target.value)}
+              >
+                <option value={FREEFORM}>— своё, вписать руками —</option>
                 <DishOptions dishes={dishList} />
               </Select>
             </Field>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Field label="Ккал">
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  value={kcal}
-                  onChange={(event) => {
-                    setKcal(event.target.value);
-                    setDirty(true);
-                  }}
-                />
-              </Field>
-              <Field label="Белок, г">
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  value={proteinG}
-                  onChange={(event) => {
-                    setProteinG(event.target.value);
-                    setDirty(true);
-                  }}
-                />
-              </Field>
-              <Field label="Жиры, г">
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  value={fatG}
-                  onChange={(event) => {
-                    setFatG(event.target.value);
-                    setDirty(true);
-                  }}
-                />
-              </Field>
-              <Field label="Углеводы, г">
-                <Input
-                  type="number"
-                  inputMode="decimal"
-                  value={carbsG}
-                  onChange={(event) => {
-                    setCarbsG(event.target.value);
-                    setDirty(true);
-                  }}
-                />
-              </Field>
-            </div>
+            {dish ? (
+              <>
+                <Field label="Сколько съел" group>
+                  <NumberStepper
+                    value={amount ?? dish.defaultAmount}
+                    onChange={setAmount}
+                    step={unitStep(dish.unit)}
+                    min={0}
+                    max={10000}
+                    suffix={dishUnitLabels[dish.unit]}
+                  />
+                </Field>
 
-            {dirty ? (
-              <p className="text-[12px] text-muted">
-                Правка меняет только этот день — справочник блюд останется как был.
-              </p>
-            ) : null}
+                {preview
+                  ? macroTiles([
+                      ['Ккал', preview.kcal],
+                      ['Белок', preview.proteinG],
+                      ['Жиры', preview.fatG],
+                      ['Углеводы', preview.carbsG],
+                    ])
+                  : null}
+
+                <p className="text-[12px] text-muted">
+                  КБЖУ считаются из количества. Съели что-то другое под этим именем — выберите
+                  «своё».
+                </p>
+              </>
+            ) : (
+              <>
+                <Field label="Название">
+                  <Input
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="например, шаверма у метро"
+                  />
+                </Field>
+
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <Field label="Ккал">
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      placeholder="0"
+                      value={kcal}
+                      onChange={(event) => setKcal(event.target.value)}
+                    />
+                  </Field>
+                  <Field label="Белок, г">
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      placeholder="0"
+                      value={proteinG}
+                      onChange={(event) => setProteinG(event.target.value)}
+                    />
+                  </Field>
+                  <Field label="Жиры, г">
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      placeholder="0"
+                      value={fatG}
+                      onChange={(event) => setFatG(event.target.value)}
+                    />
+                  </Field>
+                  <Field label="Углеводы, г">
+                    <Input
+                      type="number"
+                      inputMode="decimal"
+                      min={0}
+                      placeholder="0"
+                      value={carbsG}
+                      onChange={(event) => setCarbsG(event.target.value)}
+                    />
+                  </Field>
+                </div>
+
+                <p className="text-[12px] text-muted">
+                  Числа за всё съеденное, количества здесь нет. Правка меняет только этот день.
+                  «Добавить в справочник» заведёт блюдо с этими КБЖУ за одну штуку: если тут две
+                  порции, поделите.
+                </p>
+              </>
+            )}
           </>
         ) : (
-          <div className="grid grid-cols-4 gap-3 text-center">
-            {[
-              ['Ккал', meal.kcal],
-              ['Белок', meal.proteinG],
-              ['Жиры', meal.fatG],
-              ['Углеводы', meal.carbsG],
-            ].map(([label, value]) => (
-              <div key={String(label)} className="rounded-xl bg-surface-2 px-2 py-2.5">
-                <div className="text-[11px] text-muted">{label}</div>
-                <div className="text-sm font-semibold tabular-nums">{num(Number(value), 0)}</div>
-              </div>
-            ))}
-          </div>
+          macroTiles([
+            ['Ккал', meal.kcal],
+            ['Белок', meal.proteinG],
+            ['Жиры', meal.fatG],
+            ['Углеводы', meal.carbsG],
+          ])
         )}
       </div>
     </Sheet>

@@ -358,7 +358,7 @@ function TemplateSheet({
           />
         </Field>
 
-        <Field label="Тип">
+        <Field label="Тип" group>
           <Segmented
             value={form.kind}
             options={workoutKinds.map((value) => ({ value, label: workoutKindLabels[value] }))}
@@ -789,7 +789,7 @@ function ExerciseSheet({
           />
         </Field>
 
-        <Field label="Тип">
+        <Field label="Тип" group>
           <Segmented
             value={form.category}
             options={exerciseCategories.map((value) => ({

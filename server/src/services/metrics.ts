@@ -149,11 +149,13 @@ async function aggregateDays(
   for (const meal of meals) {
     const entry = ensure(meal.date);
     // Eaten on top of the plan: counted as eaten, never as the plan itself —
-    // the same rule the day screen applies, so the two cannot disagree.
+    // the same rule the day screen applies, so the two cannot disagree. The
+    // norm likewise comes from the frozen copy rather than from the macros,
+    // or a corrected helping would move the target it is measured against.
     if (meal.planned) {
       entry.itemsTotal += 1;
-      entry.plannedKcal += meal.kcal;
-      entry.plannedProteinG += meal.proteinG;
+      entry.plannedKcal += meal.plannedKcal;
+      entry.plannedProteinG += meal.plannedProteinG;
     }
     if (meal.completed) {
       entry.kcal += meal.kcal;
