@@ -58,6 +58,12 @@ type RangeKey = '30' | '90' | '365';
  * chest measurement means neither. Every line shows by default — the figures
  * are entered to be looked at, and the legend hides what is not wanted today.
  */
+const COMPOSITION = [
+  { key: 'fatPct', color: chartColors.warn },
+  { key: 'muscleKg', color: chartColors.success },
+  { key: 'visceral', color: chartColors.muted },
+] as const;
+
 const GIRTHS = [
   { key: 'waistCm', color: chartColors.warn },
   { key: 'chestCm', color: chartColors.teal },
@@ -75,7 +81,7 @@ export default function ProgressPage() {
 
   // Each chart remembers its own hidden series, toggled from the legend.
   const weightSeries = useSeriesToggle();
-  const bodySeries = useSeriesToggle();
+  const girthSeries = useSeriesToggle();
   const kcalSeries = useSeriesToggle();
   const proteinSeries = useSeriesToggle();
   const cardioSeries = useSeriesToggle();
@@ -157,13 +163,14 @@ export default function ProgressPage() {
             />
           </div>
 
-          {/* 1. Weight and girths: the primary chart. */}
+          {/* 1. Weight: the headline metric, on its own scale. */}
           <ChartCard
-            title="Замеры тела"
-            hint="Пунктир — скользящее среднее веса за 7 дней: дневные скачки ±1,5 кг скрывают тренд. Клик по легенде убирает линию"
-            isEmpty={metrics.data.measurements.length === 0}
+            title="Вес"
+            unit="кг"
+            hint="Пунктир — скользящее среднее за 7 дней: дневные скачки ±1,5 кг скрывают тренд"
+            isEmpty={metrics.data.measurements.every((point) => point.weightKg === null)}
             emptyText="Внесите первый замер — график появится сразу."
-            height={260}
+            height={240}
             action={
               <Button size="sm" onClick={() => setAddingMeasure(true)}>
                 <Plus size={15} />
@@ -174,29 +181,10 @@ export default function ProgressPage() {
             <LineChart data={metrics.data.measurements} margin={{ left: -18, right: 8, top: 4 }}>
               <CartesianGrid {...gridProps} />
               <XAxis dataKey="date" tickFormatter={tickDate} {...axisProps} />
-              <YAxis yAxisId="kg" domain={['auto', 'auto']} {...axisProps} />
-              <YAxis
-                yAxisId="cm"
-                orientation="right"
-                domain={['auto', 'auto']}
-                // Four series share this axis: it goes only when all four do.
-                hide={GIRTHS.every((girth) => weightSeries.isHidden(girth.key))}
-                {...axisProps}
-              />
-              <Tooltip
-                content={
-                  <ChartTooltip
-                    units={{
-                      weightKg: 'кг',
-                      weightMa7: 'кг',
-                      ...Object.fromEntries(GIRTHS.map((girth) => [girth.key, 'см'])),
-                    }}
-                  />
-                }
-              />
+              <YAxis domain={['auto', 'auto']} {...axisProps} />
+              <Tooltip content={<ChartTooltip units={{ weightKg: 'кг', weightMa7: 'кг' }} />} />
               <Legend content={<ChartLegend toggle={weightSeries} />} />
               <Line
-                yAxisId="kg"
                 dataKey="weightKg"
                 hide={weightSeries.isHidden('weightKg')}
                 name="Вес"
@@ -206,22 +194,45 @@ export default function ProgressPage() {
                 connectNulls
               />
               <Line
-                yAxisId="kg"
                 dataKey="weightMa7"
                 hide={weightSeries.isHidden('weightMa7')}
-                name="Вес, среднее 7 дн"
+                name="Среднее 7 дн"
                 stroke={chartColors.accent}
                 strokeWidth={2.5}
                 strokeDasharray="5 3"
                 dot={false}
                 connectNulls
               />
+            </LineChart>
+          </ChartCard>
+
+          {/* 2. Girths: one unit, one axis, so the lines are comparable. */}
+          <ChartCard
+            title="Замеры тела"
+            unit="см"
+            isEmpty={metrics.data.measurements.every((point) =>
+              GIRTHS.every((girth) => point[girth.key] === null),
+            )}
+            emptyText="Заполните обхваты в замере — график появится здесь."
+            height={240}
+          >
+            <LineChart data={metrics.data.measurements} margin={{ left: -18, right: 8, top: 4 }}>
+              <CartesianGrid {...gridProps} />
+              <XAxis dataKey="date" tickFormatter={tickDate} {...axisProps} />
+              <YAxis domain={['auto', 'auto']} {...axisProps} />
+              <Tooltip
+                content={
+                  <ChartTooltip
+                    units={Object.fromEntries(GIRTHS.map((girth) => [girth.key, 'см']))}
+                  />
+                }
+              />
+              <Legend content={<ChartLegend toggle={girthSeries} />} />
               {GIRTHS.map((girth) => (
                 <Line
                   key={girth.key}
-                  yAxisId="cm"
                   dataKey={girth.key}
-                  hide={weightSeries.isHidden(girth.key)}
+                  hide={girthSeries.isHidden(girth.key)}
                   name={measurementFieldLabels[girth.key].label}
                   stroke={girth.color}
                   strokeWidth={2}
@@ -232,56 +243,52 @@ export default function ProgressPage() {
             </LineChart>
           </ChartCard>
 
-          {/* 2. Body composition */}
-          <ChartCard
-            title="Состав тела"
-            isEmpty={metrics.data.measurements.every(
-              (point) => point.fatPct === null && point.muscleKg === null && point.visceral === null,
-            )}
-            emptyText="Заполните % жира, мышечную массу или висцеральный жир в замере."
-          >
-            <LineChart data={metrics.data.measurements} margin={{ left: -18, right: 8, top: 4 }}>
-              <CartesianGrid {...gridProps} />
-              <XAxis dataKey="date" tickFormatter={tickDate} {...axisProps} />
-              <YAxis domain={['auto', 'auto']} {...axisProps} />
-              <Tooltip
-                content={<ChartTooltip units={{ fatPct: '%', muscleKg: 'кг', visceral: 'ур.' }} />}
-              />
-              <Legend content={<ChartLegend toggle={bodySeries} />} />
-              <Line
-                dataKey="fatPct"
-                hide={bodySeries.isHidden('fatPct')}
-                name="% жира"
-                stroke={chartColors.warn}
-                strokeWidth={2}
-                dot={{ r: 2 }}
-                connectNulls
-              />
-              <Line
-                dataKey="muscleKg"
-                hide={bodySeries.isHidden('muscleKg')}
-                name="Мышцы, кг"
-                stroke={chartColors.success}
-                strokeWidth={2}
-                dot={{ r: 2 }}
-                connectNulls
-              />
-              <Line
-                dataKey="visceral"
-                hide={bodySeries.isHidden('visceral')}
-                name="Висцеральный"
-                stroke={chartColors.muted}
-                strokeWidth={1.5}
-                dot={{ r: 2 }}
-                connectNulls
-              />
-            </LineChart>
-          </ChartCard>
+          {/*
+            * 3. Body composition. A percentage, a weight and a bare level share
+            * nothing but the date, so they get a chart each instead of one axis
+            * stretched from 8 to 35 where every real movement disappears.
+            */}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {COMPOSITION.map((metric) => (
+              <ChartCard
+                key={metric.key}
+                title={measurementFieldLabels[metric.key].label}
+                unit={measurementFieldLabels[metric.key].unit}
+                isEmpty={metrics.data.measurements.every((point) => point[metric.key] === null)}
+                emptyText={`Заполните «${measurementFieldLabels[metric.key].label.toLowerCase()}» в замере.`}
+                height={170}
+              >
+                <LineChart
+                  data={metrics.data.measurements}
+                  margin={{ left: -18, right: 8, top: 4 }}
+                >
+                  <CartesianGrid {...gridProps} />
+                  <XAxis dataKey="date" tickFormatter={tickDate} {...axisProps} />
+                  <YAxis domain={['auto', 'auto']} {...axisProps} />
+                  <Tooltip
+                    content={
+                      <ChartTooltip
+                        units={{ [metric.key]: measurementFieldLabels[metric.key].unit }}
+                      />
+                    }
+                  />
+                  <Line
+                    dataKey={metric.key}
+                    name={measurementFieldLabels[metric.key].label}
+                    stroke={metric.color}
+                    strokeWidth={2}
+                    dot={{ r: 2 }}
+                    connectNulls
+                  />
+                </LineChart>
+              </ChartCard>
+            ))}
+          </div>
 
-          {/* 3. Calories and protein by day */}
+          {/* 4. Calories and protein by day */}
           <ChartCard
             title="Калории по дням"
-            hint="Линия — план на этот день: он и есть цель"
+            unit="ккал"
             isEmpty={metrics.data.nutrition.length === 0}
             emptyText="Отмечайте приёмы пищи — здесь появятся столбцы по дням."
           >
@@ -298,6 +305,10 @@ export default function ProgressPage() {
                 dataKey="kcal"
                 hide={kcalSeries.isHidden('kcal')}
                 name="Получено"
+                // The cells below repaint every bar; this one colour is what
+                // the legend picks up, and without it the swatch falls back to
+                // grey — the same grey as the plan line beside it.
+                fill={chartColors.accent}
                 radius={[4, 4, 0, 0]}
               >
                 {metrics.data.nutrition.map((point) => (
@@ -327,6 +338,7 @@ export default function ProgressPage() {
 
           <ChartCard
             title="Белок по дням"
+            unit="г"
             isEmpty={metrics.data.nutrition.length === 0}
             emptyText="Отмечайте приёмы пищи — здесь появятся столбцы по дням."
           >
@@ -359,16 +371,17 @@ export default function ProgressPage() {
             </ComposedChart>
           </ChartCard>
 
-          {/* 4. Plan adherence by week */}
+          {/* 5. Plan adherence by week */}
           <ChartCard
             title="Соблюдение плана по неделям"
+            unit="%"
             isEmpty={metrics.data.weeks.length === 0}
             emptyText="Появится, как только наберётся хотя бы одна неделя данных."
           >
             <BarChart data={metrics.data.weeks} margin={{ left: -18, right: 8, top: 4 }}>
               <CartesianGrid {...gridProps} />
               <XAxis dataKey="label" {...axisProps} />
-              <YAxis domain={[0, 100]} unit="%" {...axisProps} />
+              <YAxis domain={[0, 100]} {...axisProps} />
               <Tooltip
                 cursor={{ fill: 'var(--c-surface-2)' }}
                 content={<ChartTooltip units={{ adherencePct: '%' }} />}
@@ -384,9 +397,10 @@ export default function ProgressPage() {
             </BarChart>
           </ChartCard>
 
-          {/* 5. Training volume */}
+          {/* 6. Training volume */}
           <ChartCard
             title="Тренировочный объём по неделям"
+            unit="кг"
             hint="Тоннаж = сумма вес × повторы по рабочим подходам"
             isEmpty={metrics.data.weeks.every((week) => week.tonnageKg === 0)}
             emptyText="Записывайте подходы с весом — тоннаж посчитается сам."
@@ -408,9 +422,10 @@ export default function ProgressPage() {
             </BarChart>
           </ChartCard>
 
-          {/* 6. Volume by muscle group */}
+          {/* 7. Volume by muscle group */}
           <ChartCard
             title="Объём по группам мышц"
+            unit="кг"
             isEmpty={metrics.data.muscleVolume.length === 0}
             emptyText="Проставьте группы мышц у упражнений и запишите подходы."
             height={Math.max(180, metrics.data.muscleVolume.length * 38 + 40)}
@@ -436,7 +451,7 @@ export default function ProgressPage() {
             </BarChart>
           </ChartCard>
 
-          {/* 7. Cardio */}
+          {/* 8. Cardio */}
           <ChartCard
             title="Кардио по неделям"
             isEmpty={metrics.data.weeks.every((week) => week.cardioKm === 0 && week.cardioMin === 0)}
@@ -476,7 +491,7 @@ export default function ProgressPage() {
             </BarChart>
           </ChartCard>
 
-          {/* 8. Progress for one exercise */}
+          {/* 9. Progress for one exercise */}
           <ExerciseProgressCard from={from} to={to} />
 
           {/* Measurements as a list */}
@@ -502,6 +517,7 @@ function ExerciseProgressCard({ from, to }: { from: string; to: string }) {
   return (
     <ChartCard
       title="Прогрессия по упражнению"
+      unit="кг"
       hint="1ПМ — оценка по формуле Эпли: вес × (1 + повторы / 30)"
       isEmpty={(list.data?.length ?? 0) === 0 || (progress.data?.points.length ?? 0) === 0}
       emptyText="Запишите подходы с весом хотя бы в одной тренировке."

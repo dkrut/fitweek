@@ -33,6 +33,7 @@ export const gridProps = {
 /** A wrapper: title, fixed height and an honest empty state. */
 export function ChartCard({
   title,
+  unit,
   hint,
   action,
   height = 240,
@@ -41,6 +42,12 @@ export function ChartCard({
   children,
 }: {
   title: string;
+  /**
+   * What the vertical axis counts. Sits in the header so the axis ticks can
+   * stay bare numbers. Left out when the title already says it — «% жира» does
+   * not need a second per cent — and when a chart holds more than one unit.
+   */
+  unit?: string;
   hint?: string;
   action?: ReactNode;
   height?: number;
@@ -48,9 +55,14 @@ export function ChartCard({
   emptyText: string;
   children: ReactNode;
 }) {
+  const showUnit = unit !== undefined && !title.includes(unit);
+
   return (
     <Card>
-      <CardTitle action={action}>{title}</CardTitle>
+      <CardTitle action={action}>
+        {title}
+        {showUnit ? <span className="font-normal text-muted">, {unit}</span> : null}
+      </CardTitle>
       {hint ? <p className="-mt-1 mb-3 text-[12px] text-muted">{hint}</p> : null}
       {isEmpty ? (
         <EmptyState title="Данных пока нет" description={emptyText} />
