@@ -27,6 +27,10 @@ if ! docker inspect "$SOURCE" >/dev/null 2>&1; then
   exit 1
 fi
 
+# The same image the source container runs, so this keeps working whether that
+# image came from ghcr.io or from a local build.
+IMAGE="${VERIFY_IMAGE:-$(docker inspect -f '{{.Config.Image}}' "$SOURCE")}"
+
 docker rm -f "$NAME" >/dev/null 2>&1 || true
 docker volume rm "$VOLUME" >/dev/null 2>&1 || true
 docker volume create "$VOLUME" >/dev/null
@@ -34,7 +38,7 @@ docker volume create "$VOLUME" >/dev/null
 # Copying volume to volume rather than through the host: this depends neither
 # on file permissions nor on what else has that directory open.
 docker run --rm --user root --entrypoint sh \
-  --volumes-from "$SOURCE" -v "$VOLUME:/verify" fitweek \
+  --volumes-from "$SOURCE" -v "$VOLUME:/verify" "$IMAGE" \
   -c 'cp /data/app.db /verify/
       for s in -wal -shm; do
         if [ -f "/data/app.db$s" ]; then cp "/data/app.db$s" /verify/; fi
@@ -46,7 +50,7 @@ docker run -d --name "$NAME" \
   -e SESSION_SECRET=verify-secret-that-is-long-enough-0123456789 \
   -e TZ="${TZ:-Europe/Moscow}" \
   -v "$VOLUME:/data" \
-  fitweek >/dev/null
+  "$IMAGE" >/dev/null
 
 if [ -n "${VERIFY_PASSWORD:-}" ]; then
   docker cp "$(dirname "$0")/set-password.mjs" "$NAME:/app/set-password.mjs" >/dev/null

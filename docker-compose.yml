@@ -2,8 +2,10 @@ name: fitweek
 
 services:
   app:
-    build: .
-    image: fitweek
+    image: ghcr.io/dkrut/fitweek:${IMAGE_TAG:-latest}
+    # To build from this checkout instead, uncomment the line below and run
+    # `docker compose up --build -d`.
+    # build: .
     container_name: fitweek
     restart: unless-stopped
     # No published port: the app is reachable from outside only through Caddy.
