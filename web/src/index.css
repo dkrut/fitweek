@@ -47,6 +47,13 @@
   --c-warn-soft: #fdf1e0;
   --c-danger: #bb3b30;
   --c-danger-soft: #fceceb;
+  /*
+   * Extra chart hues. The roles above carry meaning — red is bad, green is
+   * good — and a body measurement means neither, so series that only need to
+   * be told apart get their own colours instead of borrowing a verdict.
+   */
+  --c-chart-teal: #0d6f8a;
+  --c-chart-pink: #a63a86;
 
   color-scheme: light;
 }
@@ -68,6 +75,8 @@
   --c-warn-soft: #2b2010;
   --c-danger: #ef7c72;
   --c-danger-soft: #2c1715;
+  --c-chart-teal: #48b8d6;
+  --c-chart-pink: #e07ac0;
 
   color-scheme: dark;
 }

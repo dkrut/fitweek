@@ -52,6 +52,19 @@ import { addDays, formatDate, num, signed, today } from '../lib/format';
 
 type RangeKey = '30' | '90' | '365';
 
+/*
+ * Everything measured with a tape, sharing one axis in centimetres. The colours
+ * carry no verdict: green and red mean good and bad elsewhere in the app, and a
+ * chest measurement means neither. Every line shows by default — the figures
+ * are entered to be looked at, and the legend hides what is not wanted today.
+ */
+const GIRTHS = [
+  { key: 'waistCm', color: chartColors.warn },
+  { key: 'chestCm', color: chartColors.teal },
+  { key: 'hipCm', color: chartColors.pink },
+  { key: 'bicepCm', color: chartColors.muted },
+] as const;
+
 export default function ProgressPage() {
   const [range, setRange] = useState<RangeKey>('90');
   const to = today();
@@ -144,9 +157,9 @@ export default function ProgressPage() {
             />
           </div>
 
-          {/* 1. Weight and waist: the primary chart. */}
+          {/* 1. Weight and girths: the primary chart. */}
           <ChartCard
-            title="Вес и талия"
+            title="Замеры тела"
             hint="Пунктир — скользящее среднее веса за 7 дней: дневные скачки ±1,5 кг скрывают тренд. Клик по легенде убирает линию"
             isEmpty={metrics.data.measurements.length === 0}
             emptyText="Внесите первый замер — график появится сразу."
@@ -166,11 +179,20 @@ export default function ProgressPage() {
                 yAxisId="cm"
                 orientation="right"
                 domain={['auto', 'auto']}
-                hide={weightSeries.isHidden('waistCm')}
+                // Four series share this axis: it goes only when all four do.
+                hide={GIRTHS.every((girth) => weightSeries.isHidden(girth.key))}
                 {...axisProps}
               />
               <Tooltip
-                content={<ChartTooltip units={{ weightKg: 'кг', weightMa7: 'кг', waistCm: 'см' }} />}
+                content={
+                  <ChartTooltip
+                    units={{
+                      weightKg: 'кг',
+                      weightMa7: 'кг',
+                      ...Object.fromEntries(GIRTHS.map((girth) => [girth.key, 'см'])),
+                    }}
+                  />
+                }
               />
               <Legend content={<ChartLegend toggle={weightSeries} />} />
               <Line
@@ -194,16 +216,19 @@ export default function ProgressPage() {
                 dot={false}
                 connectNulls
               />
-              <Line
-                yAxisId="cm"
-                dataKey="waistCm"
-                hide={weightSeries.isHidden('waistCm')}
-                name="Талия"
-                stroke={chartColors.warn}
-                strokeWidth={2}
-                dot={{ r: 2 }}
-                connectNulls
-              />
+              {GIRTHS.map((girth) => (
+                <Line
+                  key={girth.key}
+                  yAxisId="cm"
+                  dataKey={girth.key}
+                  hide={weightSeries.isHidden(girth.key)}
+                  name={measurementFieldLabels[girth.key].label}
+                  stroke={girth.color}
+                  strokeWidth={2}
+                  dot={{ r: 2 }}
+                  connectNulls
+                />
+              ))}
             </LineChart>
           </ChartCard>
 

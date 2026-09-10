@@ -10,6 +10,9 @@ export const chartColors = {
   warn: 'var(--c-warn)',
   danger: 'var(--c-danger)',
   muted: 'var(--c-muted)',
+  /* Meaningless by design: for series that only need telling apart. */
+  teal: 'var(--c-chart-teal)',
+  pink: 'var(--c-chart-pink)',
   grid: 'var(--c-border)',
   surface: 'var(--c-surface)',
 } as const;
@@ -136,9 +139,14 @@ export function useSeriesToggle(initialHidden: string[] = []) {
     });
   }, []);
 
+  const showAll = useCallback(() => setHidden(new Set<string>()), []);
+  const hideAll = useCallback((keys: string[]) => setHidden(new Set(keys)), []);
+
   return {
     hidden,
     toggle,
+    showAll,
+    hideAll,
     isHidden: (key: string) => hidden.has(key),
   };
 }
@@ -163,6 +171,9 @@ export function ChartLegend({
   toggle: SeriesToggle;
 }) {
   if (!payload || payload.length === 0) return null;
+
+  const keys = payload.map((item) => String(item.dataKey ?? item.value));
+  const allOff = keys.every((key) => toggle.isHidden(key));
 
   return (
     <ul className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 pt-3">
@@ -190,6 +201,26 @@ export function ChartLegend({
           </li>
         );
       })}
+
+      {/*
+        * Clearing a crowded chart one line at a time is a chore, and so is
+        * putting it back. With a single series there is nothing to clear, so
+        * the control stays away.
+        */}
+      {keys.length > 1 ? (
+        <li className="border-l border-border pl-3">
+          <button
+            type="button"
+            onClick={() => (allOff ? toggle.showAll() : toggle.hideAll(keys))}
+            className={cx(
+              'rounded-lg px-1.5 py-0.5 text-[12px] text-muted transition-colors',
+              'hover:bg-surface-2 hover:text-text focus-visible:focus-ring',
+            )}
+          >
+            {allOff ? 'Показать все' : 'Скрыть все'}
+          </button>
+        </li>
+      ) : null}
     </ul>
   );
 }
