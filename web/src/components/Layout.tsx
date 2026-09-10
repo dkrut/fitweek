@@ -125,6 +125,29 @@ function GithubMark() {
   );
 }
 
+/** Injected by vite from package.json, so the two cannot drift apart. */
+export const APP_VERSION = `v${__APP_VERSION__}`;
+
+/** The link to the source, wherever the version line is shown. */
+export function RepoLink() {
+  return (
+    <a
+      href={REPO_URL}
+      target="_blank"
+      rel="noreferrer noopener"
+      /*
+       * Nothing in the app is underlined at rest, and one underlined line
+       * would read as a stray. Under the cursor it is the plain link cue,
+       * which the change of grey alone was too quiet to give.
+       */
+      className="inline-flex items-center gap-1.5 transition-colors hover:text-text hover:underline"
+    >
+      <GithubMark />
+      GitHub
+    </a>
+  );
+}
+
 /**
  * One navigation set for every width: a sidebar on desktop, a bottom tab bar on
  * a phone. There is no duplicate markup per breakpoint.
@@ -160,15 +183,10 @@ export function Layout({ children }: { children: ReactNode }) {
           )}
         </nav>
 
-        <a
-          href={REPO_URL}
-          target="_blank"
-          rel="noreferrer noopener"
-          className="flex items-center gap-2 border-t border-border px-5 py-3.5 text-[12px] text-muted transition-colors hover:bg-surface-2 hover:text-text"
-        >
-          <GithubMark />
-          dkrut/fitweek
-        </a>
+        <div className="flex items-center justify-between gap-2 border-t border-border px-5 py-3.5 text-[12px] text-muted">
+          <span className="tabular-nums">{APP_VERSION}</span>
+          <RepoLink />
+        </div>
       </aside>
 
       <main className="flex-1 pb-[calc(4.5rem+env(safe-area-inset-bottom))] lg:pb-0">

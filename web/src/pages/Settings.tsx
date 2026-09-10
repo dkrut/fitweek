@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react';
 import { Download, LogOut, Upload } from 'lucide-react';
 import type { Theme } from '@shared/index';
-import { PageHeader } from '../components/Layout';
+import { APP_VERSION, PageHeader, RepoLink } from '../components/Layout';
 import {
   Button,
   Card,
@@ -32,6 +32,15 @@ export default function SettingsPage() {
         <Appearance />
         <DataSection />
         <Account />
+        {/* The sidebar is desktop-only, so on a phone this is the one place
+            the version and the source link can be found. */}
+        <p className="flex items-center justify-center gap-2 pb-2 text-[12px] text-muted">
+          <span className="tabular-nums">{APP_VERSION}</span>
+          {/* Side by side and equally grey, the two read as one phrase; in the
+              sidebar the gap between the ends does this job on its own. */}
+          <span aria-hidden="true">·</span>
+          <RepoLink />
+        </p>
       </div>
     </>
   );
