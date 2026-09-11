@@ -3,10 +3,9 @@ name: Docker image
 on:
   workflow_dispatch:
     inputs:
-      tag:
-        description: 'Additional tag, e.g. 1.0.0. Empty publishes latest and sha only.'
-        required: false
-        default: ''
+      version:
+        description: 'Version for the image tag, e.g. 1.0.0. Must match the git tag and package.json.'
+        required: true
 
 env:
   REGISTRY: ghcr.io
@@ -46,8 +45,7 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=latest
-            type=sha,format=short
-            type=raw,value=${{ inputs.tag }},enable=${{ inputs.tag != '' }}
+            type=raw,value=${{ inputs.version }}
 
       # Loaded into the local daemon first, so a broken image never reaches the registry.
       - uses: docker/build-push-action@v6
