@@ -1,0 +1,142 @@
+name: Release
+
+# One button for the whole release: bumps the version, builds the image, tags
+# the commit and publishes the release notes. Nothing is pushed anywhere until
+# the image has been built and answered /api/health.
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Which part of the version to raise'
+        required: true
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+
+  release:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      # Full history: the previous tag is needed to bound the release notes.
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+
+      # The version is raised before the build because the web bundle bakes it
+      # in from package.json. Only files change here; nothing is committed yet,
+      # so a failing build below leaves the repository untouched.
+      - id: version
+        run: |
+          raised=$(npm version ${{ inputs.bump }} --no-git-tag-version | tail -n1)
+          # The workspaces are set to that exact number instead of being bumped
+          # themselves: a relative bump would carry any drift forward for good.
+          npm version "${raised#v}" --no-git-tag-version --workspaces --allow-same-version
+          echo "number=${raised#v}" >> "$GITHUB_OUTPUT"
+          echo "tag=${raised}" >> "$GITHUB_OUTPUT"
+
+      # Rebuilt from the raised version; it also supplies the OCI labels that
+      # link the package to this repository.
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ steps.version.outputs.number }}
+
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Loaded into the local daemon first, so a broken image never reaches the
+      # registry and no tag is ever created for it.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          tags: fitweek:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        run: |
+          docker run -d --name fitweek-smoke -p 8080:8080 \
+            -e SESSION_SECRET=ci-smoke-secret-0123456789abcdef fitweek:smoke
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/api/health; then ok=1; break; fi
+            sleep 2
+          done
+          if [ "${ok:-}" != 1 ]; then docker logs fitweek-smoke; exit 1; fi
+          docker rm -f fitweek-smoke
+
+      - name: Commit and tag
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git commit -am "Release ${{ steps.version.outputs.number }}"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "${{ steps.version.outputs.number }}"
+          git push origin HEAD:${{ github.ref_name }} --follow-tags
+
+      # Every layer is cached by the build above, so this only uploads them.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          # Without this buildx attaches a provenance attestation, which lands in
+          # the registry as a second, platform-less manifest.
+          provenance: false
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag='${{ steps.version.outputs.tag }}'
+          # The tag right before this one. Left to itself GitHub picks the base
+          # for the notes by its own rules and can walk back to the first commit.
+          previous=$(git describe --tags --abbrev=0 "$tag^" 2>/dev/null || true)
+          echo "Notes are counted from: ${previous:-the first commit}"
+
+          endpoint="repos/$GITHUB_REPOSITORY/releases/generate-notes"
+          if [ -n "$previous" ]; then
+            notes=$(gh api "$endpoint" -f tag_name="$tag" -f previous_tag_name="$previous" --jq .body)
+          else
+            notes=$(gh api "$endpoint" -f tag_name="$tag" --jq .body)
+          fi
+
+          # GitHub closes the notes with a bare compare URL; the template itself
+          # is not settable, so the link is given its range as a title here.
+          notes=$(printf '%s\n' "$notes" | sed -E 's#(https://[^ ]+/compare/([^ ]+))#[\2](\1)#')
+
+          gh release create "$tag" --title "$tag" --notes "$notes"
